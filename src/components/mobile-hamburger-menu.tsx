@@ -8,6 +8,7 @@ import {
   CheckListIcon,
   Clock01Icon,
   CommandLineIcon,
+  DashboardSquare01Icon,
   McpServerIcon,
   Menu01Icon,
   PuzzleIcon,
@@ -54,6 +55,13 @@ export const MOBILE_HAMBURGER_NAV_ITEMS = [
     icon: UserGroupIcon,
     to: '/swarm',
     match: (p: string) => p === '/swarm' || p.startsWith('/swarm2'),
+  },
+  {
+    id: 'workroom',
+    label: 'Workroom',
+    icon: DashboardSquare01Icon,
+    to: '/workroom',
+    match: (p: string) => p.startsWith('/workroom'),
   },
   {
     id: 'playground',

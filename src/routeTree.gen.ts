@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorldRouteImport } from './routes/world'
+import { Route as WorkroomRouteImport } from './routes/workroom'
 import { Route as VtCapitalRouteImport } from './routes/vt-capital'
 import { Route as TerminalRouteImport } from './routes/terminal'
 import { Route as TasksRouteImport } from './routes/tasks'
@@ -179,6 +180,11 @@ import { Route as ApiRunsSessionKeyRunIdAbandonRouteImport } from './routes/api/
 const WorldRoute = WorldRouteImport.update({
   id: '/world',
   path: '/world',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkroomRoute = WorkroomRouteImport.update({
+  id: '/workroom',
+  path: '/workroom',
   getParentRoute: () => rootRouteImport,
 } as any)
 const VtCapitalRoute = VtCapitalRouteImport.update({
@@ -1043,6 +1049,7 @@ export interface FileRoutesByFullPath {
   '/tasks': typeof TasksRoute
   '/terminal': typeof TerminalRoute
   '/vt-capital': typeof VtCapitalRoute
+  '/workroom': typeof WorkroomRoute
   '/world': typeof WorldRoute
   '/api/agent-bus': typeof ApiAgentBusRoute
   '/api/artifacts': typeof ApiArtifactsRouteWithChildren
@@ -1210,6 +1217,7 @@ export interface FileRoutesByTo {
   '/tasks': typeof TasksRoute
   '/terminal': typeof TerminalRoute
   '/vt-capital': typeof VtCapitalRoute
+  '/workroom': typeof WorkroomRoute
   '/world': typeof WorldRoute
   '/api/agent-bus': typeof ApiAgentBusRoute
   '/api/artifacts': typeof ApiArtifactsRouteWithChildren
@@ -1379,6 +1387,7 @@ export interface FileRoutesById {
   '/tasks': typeof TasksRoute
   '/terminal': typeof TerminalRoute
   '/vt-capital': typeof VtCapitalRoute
+  '/workroom': typeof WorkroomRoute
   '/world': typeof WorldRoute
   '/api/agent-bus': typeof ApiAgentBusRoute
   '/api/artifacts': typeof ApiArtifactsRouteWithChildren
@@ -1549,6 +1558,7 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/terminal'
     | '/vt-capital'
+    | '/workroom'
     | '/world'
     | '/api/agent-bus'
     | '/api/artifacts'
@@ -1716,6 +1726,7 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/terminal'
     | '/vt-capital'
+    | '/workroom'
     | '/world'
     | '/api/agent-bus'
     | '/api/artifacts'
@@ -1884,6 +1895,7 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/terminal'
     | '/vt-capital'
+    | '/workroom'
     | '/world'
     | '/api/agent-bus'
     | '/api/artifacts'
@@ -2053,6 +2065,7 @@ export interface RootRouteChildren {
   TasksRoute: typeof TasksRoute
   TerminalRoute: typeof TerminalRoute
   VtCapitalRoute: typeof VtCapitalRoute
+  WorkroomRoute: typeof WorkroomRoute
   WorldRoute: typeof WorldRoute
   ApiAgentBusRoute: typeof ApiAgentBusRoute
   ApiArtifactsRoute: typeof ApiArtifactsRouteWithChildren
@@ -2172,6 +2185,13 @@ declare module '@tanstack/react-router' {
       path: '/world'
       fullPath: '/world'
       preLoaderRoute: typeof WorldRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workroom': {
+      id: '/workroom'
+      path: '/workroom'
+      fullPath: '/workroom'
+      preLoaderRoute: typeof WorkroomRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/vt-capital': {
@@ -3598,6 +3618,7 @@ const rootRouteChildren: RootRouteChildren = {
   TasksRoute: TasksRoute,
   TerminalRoute: TerminalRoute,
   VtCapitalRoute: VtCapitalRoute,
+  WorkroomRoute: WorkroomRoute,
   WorldRoute: WorldRoute,
   ApiAgentBusRoute: ApiAgentBusRoute,
   ApiArtifactsRoute: ApiArtifactsRouteWithChildren,
