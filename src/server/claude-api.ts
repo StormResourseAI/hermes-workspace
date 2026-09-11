@@ -6,7 +6,6 @@
  */
 
 import {
-  BEARER_TOKEN,
   CLAUDE_API,
   SESSIONS_API_UNAVAILABLE_MESSAGE,
   dashboardFetch,
@@ -14,6 +13,8 @@ import {
   getCapabilities,
   probeGateway,
 } from './gateway-capabilities'
+import { gatewayAuthHeaders } from './gateway-bearer'
+import { readCreatedHermesSessionId } from './hermes-session-id'
 import {
   createSession as createDashboardSession,
   deleteSession as deleteDashboardSession,
@@ -25,8 +26,7 @@ import {
   updateSession as updateDashboardSession,
 } from './claude-dashboard-api'
 
-const _authHeaders = (): Record<string, string> =>
-  BEARER_TOKEN ? { Authorization: `Bearer ${BEARER_TOKEN}` } : {}
+const _authHeaders = (): Record<string, string> => gatewayAuthHeaders()
 
 console.log(`[claude-api] Configured API: ${CLAUDE_API}`)
 
@@ -168,6 +168,27 @@ export async function createSession(opts?: {
     opts || {},
   )
   return resp.session
+}
+
+export async function createGatewaySession(opts?: {
+  title?: string
+  model?: string
+}): Promise<ClaudeSession> {
+  const resp = await claudePost<unknown>('/api/sessions', opts || {})
+  const id = readCreatedHermesSessionId(resp)
+  if (!id) {
+    throw new Error('Hermes gateway did not return a session id')
+  }
+  const nested =
+    resp &&
+    typeof resp === 'object' &&
+    !Array.isArray(resp) &&
+    'session' in resp &&
+    resp.session &&
+    typeof resp.session === 'object'
+      ? (resp.session as ClaudeSession)
+      : null
+  return { ...(nested ?? (resp as ClaudeSession)), id }
 }
 
 export async function updateSession(
@@ -376,6 +397,8 @@ export async function streamChat(
   body: {
     message: string
     model?: string
+    provider?: string
+    require_model_lock?: boolean
     system_message?: string
     attachments?: Array<Record<string, unknown>>
   },

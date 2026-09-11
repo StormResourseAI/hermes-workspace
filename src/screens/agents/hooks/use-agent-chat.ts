@@ -5,6 +5,7 @@ import {
   sendToSession,
   type SessionHistoryMessage,
 } from '@/lib/gateway-api'
+import { OPERATIONS_ACTIVE_RUNS_QUERY_KEY } from '@/lib/operations-session'
 
 export type OperationsChatMessage = {
   id: string
@@ -98,12 +99,25 @@ export function useAgentChat(
         profile: opts?.profile,
       })
     },
+    onMutate: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: OPERATIONS_ACTIVE_RUNS_QUERY_KEY,
+      })
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['operations', 'chat', sessionKey],
       })
       await queryClient.invalidateQueries({
         queryKey: ['operations', 'sessions'],
+      })
+      await queryClient.invalidateQueries({
+        queryKey: OPERATIONS_ACTIVE_RUNS_QUERY_KEY,
+      })
+    },
+    onError: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: OPERATIONS_ACTIVE_RUNS_QUERY_KEY,
       })
     },
   })

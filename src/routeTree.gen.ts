@@ -128,6 +128,7 @@ import { Route as ApiSkillsInstallRouteImport } from './routes/api/skills/instal
 import { Route as ApiSkillsHubSearchRouteImport } from './routes/api/skills/hub-search'
 import { Route as ApiSessionsSendRouteImport } from './routes/api/sessions/send'
 import { Route as ApiSessionsSearchRouteImport } from './routes/api/sessions/search'
+import { Route as ApiRuntimeCustomRouteImport } from './routes/api/runtime/custom'
 import { Route as ApiRunsActiveRouteImport } from './routes/api/runs/active'
 import { Route as ApiProfilesUpdateRouteImport } from './routes/api/profiles/update'
 import { Route as ApiProfilesToggleSkillRouteImport } from './routes/api/profiles/toggle-skill'
@@ -775,6 +776,11 @@ const ApiSessionsSearchRoute = ApiSessionsSearchRouteImport.update({
   path: '/search',
   getParentRoute: () => ApiSessionsRoute,
 } as any)
+const ApiRuntimeCustomRoute = ApiRuntimeCustomRouteImport.update({
+  id: '/api/runtime/custom',
+  path: '/api/runtime/custom',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiRunsActiveRoute = ApiRunsActiveRouteImport.update({
   id: '/api/runs/active',
   path: '/api/runs/active',
@@ -1173,6 +1179,7 @@ export interface FileRoutesByFullPath {
   '/api/profiles/toggle-skill': typeof ApiProfilesToggleSkillRoute
   '/api/profiles/update': typeof ApiProfilesUpdateRoute
   '/api/runs/active': typeof ApiRunsActiveRoute
+  '/api/runtime/custom': typeof ApiRuntimeCustomRoute
   '/api/sessions/search': typeof ApiSessionsSearchRoute
   '/api/sessions/send': typeof ApiSessionsSendRoute
   '/api/skills/hub-search': typeof ApiSkillsHubSearchRoute
@@ -1341,6 +1348,7 @@ export interface FileRoutesByTo {
   '/api/profiles/toggle-skill': typeof ApiProfilesToggleSkillRoute
   '/api/profiles/update': typeof ApiProfilesUpdateRoute
   '/api/runs/active': typeof ApiRunsActiveRoute
+  '/api/runtime/custom': typeof ApiRuntimeCustomRoute
   '/api/sessions/search': typeof ApiSessionsSearchRoute
   '/api/sessions/send': typeof ApiSessionsSendRoute
   '/api/skills/hub-search': typeof ApiSkillsHubSearchRoute
@@ -1511,6 +1519,7 @@ export interface FileRoutesById {
   '/api/profiles/toggle-skill': typeof ApiProfilesToggleSkillRoute
   '/api/profiles/update': typeof ApiProfilesUpdateRoute
   '/api/runs/active': typeof ApiRunsActiveRoute
+  '/api/runtime/custom': typeof ApiRuntimeCustomRoute
   '/api/sessions/search': typeof ApiSessionsSearchRoute
   '/api/sessions/send': typeof ApiSessionsSendRoute
   '/api/skills/hub-search': typeof ApiSkillsHubSearchRoute
@@ -1682,6 +1691,7 @@ export interface FileRouteTypes {
     | '/api/profiles/toggle-skill'
     | '/api/profiles/update'
     | '/api/runs/active'
+    | '/api/runtime/custom'
     | '/api/sessions/search'
     | '/api/sessions/send'
     | '/api/skills/hub-search'
@@ -1850,6 +1860,7 @@ export interface FileRouteTypes {
     | '/api/profiles/toggle-skill'
     | '/api/profiles/update'
     | '/api/runs/active'
+    | '/api/runtime/custom'
     | '/api/sessions/search'
     | '/api/sessions/send'
     | '/api/skills/hub-search'
@@ -2019,6 +2030,7 @@ export interface FileRouteTypes {
     | '/api/profiles/toggle-skill'
     | '/api/profiles/update'
     | '/api/runs/active'
+    | '/api/runtime/custom'
     | '/api/sessions/search'
     | '/api/sessions/send'
     | '/api/skills/hub-search'
@@ -2170,6 +2182,7 @@ export interface RootRouteChildren {
   ApiProfilesToggleSkillRoute: typeof ApiProfilesToggleSkillRoute
   ApiProfilesUpdateRoute: typeof ApiProfilesUpdateRoute
   ApiRunsActiveRoute: typeof ApiRunsActiveRoute
+  ApiRuntimeCustomRoute: typeof ApiRuntimeCustomRoute
   ApiUpdateAgentRoute: typeof ApiUpdateAgentRoute
   ApiUpdateStatusRoute: typeof ApiUpdateStatusRoute
   ApiUpdateWorkspaceRoute: typeof ApiUpdateWorkspaceRoute
@@ -3013,6 +3026,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSessionsSearchRouteImport
       parentRoute: typeof ApiSessionsRoute
     }
+    '/api/runtime/custom': {
+      id: '/api/runtime/custom'
+      path: '/api/runtime/custom'
+      fullPath: '/api/runtime/custom'
+      preLoaderRoute: typeof ApiRuntimeCustomRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/runs/active': {
       id: '/api/runs/active'
       path: '/api/runs/active'
@@ -3723,6 +3743,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiProfilesToggleSkillRoute: ApiProfilesToggleSkillRoute,
   ApiProfilesUpdateRoute: ApiProfilesUpdateRoute,
   ApiRunsActiveRoute: ApiRunsActiveRoute,
+  ApiRuntimeCustomRoute: ApiRuntimeCustomRoute,
   ApiUpdateAgentRoute: ApiUpdateAgentRoute,
   ApiUpdateStatusRoute: ApiUpdateStatusRoute,
   ApiUpdateWorkspaceRoute: ApiUpdateWorkspaceRoute,

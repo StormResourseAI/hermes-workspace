@@ -8,10 +8,13 @@ import { parseOperationsAgentId } from '../lib/operations-session'
 export {
   getOperationsSessionKey,
   parseOperationsAgentId,
+  buildOperationsExecutionSessionKey,
+  getOperationsFriendlySessionKey,
 } from '../lib/operations-session'
 
 export const STORMBOT_PROFILE_NAME = 'framesengineering'
 export const QWEN_LOCAL_MODEL = 'qwen3.5:9b-q4_K_M'
+export const QWEN_LOCAL_PROVIDER = 'Qwen Local'
 export const QWEN_LOCAL_BASE_URL = 'http://127.0.0.1:11434/v1'
 
 export type OperationsDispatch = {
@@ -19,6 +22,7 @@ export type OperationsDispatch = {
   agentId: string
   profileName: string
   model: string
+  provider: string
   cwd: string
   providerBaseUrl: string
 }
@@ -52,6 +56,24 @@ function readString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function readConfiguredModel(cfg: Record<string, unknown>): string {
+  const model = cfg.model
+  if (typeof model === 'string') return model.trim()
+  if (model && typeof model === 'object' && !Array.isArray(model)) {
+    const rec = model as Record<string, unknown>
+    return readString(rec.default) || readString(rec.model)
+  }
+  return ''
+}
+
+function readConfiguredProvider(cfg: Record<string, unknown>): string {
+  const model = cfg.model
+  if (model && typeof model === 'object' && !Array.isArray(model)) {
+    return readString((model as Record<string, unknown>).provider)
+  }
+  return ''
+}
+
 function profileHome(profileName: string): string {
   if (profileName === 'default') return hermesRoot()
   return path.join(hermesRoot(), 'profiles', profileName)
@@ -78,13 +100,14 @@ export function resolveOperationsDispatch(
   const cwd =
     readString(terminal.cwd) ||
     '/Users/brianackley/stormbot-os'
-  const model = readString(cfg.model) || QWEN_LOCAL_MODEL
+  const model = readConfiguredModel(cfg) || QWEN_LOCAL_MODEL
 
   return {
     sessionKey,
     agentId,
     profileName,
     model,
+    provider: readConfiguredProvider(cfg) || QWEN_LOCAL_PROVIDER,
     cwd,
     providerBaseUrl: QWEN_LOCAL_BASE_URL,
   }
@@ -130,16 +153,24 @@ export function buildOperationsScopedMessage(
   dispatch: OperationsDispatch,
   identity: TerminalIdentity,
 ): string {
-  return [
+  const lines = [
     `<workspace_context active="true" name="${dispatch.profileName}" path="${dispatch.cwd}" />`,
-    `<operations_profile name="${dispatch.profileName}" model="${dispatch.model}" />`,
+    `<operations_profile name="${dispatch.profileName}" model="${dispatch.model}" provider="${dispatch.provider}" />`,
     `You are the ${dispatch.profileName} assistant.`,
     'Use the local terminal in the workspace path below. Do not use Codex or cloud providers.',
     `Terminal cwd: ${dispatch.cwd}`,
-    'Read-only terminal snapshot (already executed in that cwd):',
-    formatTerminalIdentity(identity),
-    'When the user asks for pwd / git branch / HEAD, report those three lines exactly. Do not invent a different path, branch, or SHA.',
-    '',
-    message,
-  ].join('\n')
+  ]
+  if (isOperationsIdentityPrompt(message)) {
+    lines.push(
+      'Read-only terminal snapshot (already executed in that cwd):',
+      formatTerminalIdentity(identity),
+      'When the user asks for pwd / git branch / HEAD, report those three lines exactly. Do not invent a different path, branch, or SHA.',
+    )
+  } else {
+    lines.push(
+      'You must use a real Hermes tool for file, terminal, and database work. Do not reuse a stored identity snapshot.',
+    )
+  }
+  lines.push('', message)
+  return lines.join('\n')
 }

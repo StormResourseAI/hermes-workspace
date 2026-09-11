@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { getHermesRoot } from './claude-paths'
+import { hasActiveSendRun } from './send-run-tracker'
 
 export type PersistedRunToolCall = {
   id: string
@@ -136,8 +137,23 @@ export async function updatePersistedRun(
   })
 }
 
-function isTerminalRunStatus(status: PersistedRunState['status']): boolean {
+export const STALE_RUN_THRESHOLD_MS = 5 * 60 * 1000
+export const RECENT_COMPLETE_WINDOW_MS = 2 * 60 * 1000
+export const STALE_RUN_RECOVERY_REASON = 'stale_run_recovered'
+
+export function isTerminalRunStatus(
+  status: PersistedRunState['status'] | string | null | undefined,
+): boolean {
   return status === 'complete' || status === 'error'
+}
+
+export function isLivePersistedRun(
+  run: Pick<PersistedRunState, 'runId' | 'status' | 'updatedAt'>,
+  now = Date.now(),
+): boolean {
+  if (isTerminalRunStatus(run.status)) return false
+  if (hasActiveSendRun(run.runId)) return true
+  return now - run.updatedAt < STALE_RUN_THRESHOLD_MS
 }
 
 function runHasVisibleResult(run: PersistedRunState): boolean {
@@ -245,13 +261,49 @@ export async function completeLiveRunsForSession(
   )
 }
 
-// A run that hasn't been touched in this long is considered orphaned (e.g.
-// the agent process crashed, the network dropped silently, or the user
-// navigated away during a `handoff` that never resolved). Treating these as
-// "active" makes every chat re-open show a phantom "Thinking…" indicator
-// until the 120s client-side failsafe clears it.
-const STALE_RUN_THRESHOLD_MS = 5 * 60 * 1000
-const RECENT_COMPLETE_WINDOW_MS = 2 * 60 * 1000
+async function recoverStaleRun(
+  run: PersistedRunState,
+): Promise<PersistedRunState | null> {
+  return updatePersistedRun(run.sessionKey, run.runId, (current) => {
+    if (isTerminalRunStatus(current.status) || isLivePersistedRun(current)) {
+      return current
+    }
+    return {
+      ...current,
+      status: 'error',
+      errorMessage: STALE_RUN_RECOVERY_REASON,
+      lastEventAt: Date.now(),
+    }
+  })
+}
+
+export async function reconcileStaleRuns(
+  sessionKey?: string,
+): Promise<Array<PersistedRunState>> {
+  const runs = sessionKey
+    ? await readRunsInDir(sessionDir(sessionKey)).catch(() => [])
+    : await readAllPersistedRuns()
+  const recovered: Array<PersistedRunState> = []
+  for (const run of runs) {
+    if (isTerminalRunStatus(run.status) || isLivePersistedRun(run)) continue
+    const next = await recoverStaleRun(run)
+    if (next) recovered.push(next)
+  }
+  return recovered
+}
+
+async function readAllPersistedRuns(): Promise<Array<PersistedRunState>> {
+  try {
+    const entries = await readdir(RUNS_ROOT, { withFileTypes: true })
+    const sessionDirs = entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(RUNS_ROOT, entry.name))
+    const runsBySession = await Promise.all(sessionDirs.map(readRunsInDir))
+    return runsBySession.flat()
+  } catch {
+    return []
+  }
+}
 
 async function readRunsInDir(dir: string): Promise<Array<PersistedRunState>> {
   const files = (await readdir(dir)).filter((name) => name.endsWith('.json'))
@@ -273,27 +325,22 @@ export async function getActiveRunForSession(
   sessionKey: string,
 ): Promise<PersistedRunState | null> {
   try {
+    await reconcileStaleRuns(sessionKey)
     const runs = await readRunsInDir(sessionDir(sessionKey))
     const now = Date.now()
     const candidates = runs
       .filter((run) => {
-        const age = now - run.updatedAt
-        if (run.status === 'complete' || run.status === 'error') {
-          return age < RECENT_COMPLETE_WINDOW_MS
+        if (isTerminalRunStatus(run.status)) {
+          if (run.errorMessage === STALE_RUN_RECOVERY_REASON) return false
+          return now - run.updatedAt < RECENT_COMPLETE_WINDOW_MS
         }
-        return age < STALE_RUN_THRESHOLD_MS
+        return isLivePersistedRun(run, now)
       })
       .sort((a, b) => {
         const aHasResult = Boolean(runHasVisibleResult(a))
         const bHasResult = Boolean(runHasVisibleResult(b))
-        const aLive =
-          a.status !== 'complete' &&
-          a.status !== 'error' &&
-          !aHasResult
-        const bLive =
-          b.status !== 'complete' &&
-          b.status !== 'error' &&
-          !bHasResult
+        const aLive = isLivePersistedRun(a, now) && !aHasResult
+        const bLive = isLivePersistedRun(b, now) && !bHasResult
         if (aLive !== bLive) return aLive ? -1 : 1
         if (aHasResult !== bHasResult) return aHasResult ? -1 : 1
         return b.updatedAt - a.updatedAt
@@ -304,21 +351,14 @@ export async function getActiveRunForSession(
   }
 }
 
-// Lists every non-complete/error run across all sessions, regardless of
-// staleness. Powers the "Background runs" panel so users can inspect and
-// abandon orphans that the staleness filter hides from the chat UI.
+export async function listActiveRuns(): Promise<Array<PersistedRunState>> {
+  await reconcileStaleRuns()
+  const runs = await readAllPersistedRuns()
+  return runs
+    .filter((run) => isLivePersistedRun(run))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
 export async function listAllActiveRuns(): Promise<Array<PersistedRunState>> {
-  try {
-    const entries = await readdir(RUNS_ROOT, { withFileTypes: true })
-    const sessionDirs = entries
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => path.join(RUNS_ROOT, entry.name))
-    const runsBySession = await Promise.all(sessionDirs.map(readRunsInDir))
-    return runsBySession
-      .flat()
-      .filter((run) => !['complete', 'error'].includes(run.status))
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-  } catch {
-    return []
-  }
+  return listActiveRuns()
 }

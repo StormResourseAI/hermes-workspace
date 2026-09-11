@@ -51,6 +51,7 @@ describe('operations-dispatch', () => {
       agentId: 'framesengineering',
       profileName: 'framesengineering',
       model: 'qwen3.5:9b-q4_K_M',
+      provider: 'Qwen Local',
       cwd: '/Users/brianackley/stormbot-os',
       providerBaseUrl: 'http://127.0.0.1:11434/v1',
     })
@@ -67,6 +68,9 @@ describe('operations-dispatch', () => {
     expect(scoped).toContain('name="framesengineering"')
     expect(scoped).toContain('/Users/brianackley/stormbot-os')
     expect(scoped).toContain('qwen3.5:9b-q4_K_M')
+    expect(scoped).toContain('provider="Qwen Local"')
+    expect(scoped).toContain('You must use a real Hermes tool')
+    expect(scoped).not.toContain('report those three lines exactly')
     expect(scoped).not.toContain('codex')
   })
 
@@ -78,6 +82,52 @@ describe('operations-dispatch', () => {
       ),
     ).toBe(true)
     expect(isOperationsIdentityPrompt('Prepare HVAC outreach')).toBe(false)
+  })
+
+  it('reads model.default when the profile uses the custom-provider dict form', async () => {
+    const profile = path.join(tempHome, 'profiles', 'framesengineering')
+    mkdirSync(profile, { recursive: true })
+    writeFileSync(
+      path.join(profile, 'config.yaml'),
+      [
+        'model:',
+        '  default: qwen3.5:9b-q4_K_M',
+        '  provider: custom',
+        '  base_url: http://127.0.0.1:11434/v1',
+        '  api_mode: chat_completions',
+        'terminal:',
+        '  cwd: /Users/brianackley/stormbot-os',
+        '',
+      ].join('\n'),
+      'utf-8',
+    )
+    const { resolveOperationsDispatch } = await import('./operations-dispatch')
+    const dispatch = resolveOperationsDispatch('agent:main:ops-framesengineering')
+    expect(dispatch?.model).toBe('qwen3.5:9b-q4_K_M')
+    expect(dispatch?.cwd).toBe('/Users/brianackley/stormbot-os')
+  })
+
+  it('does not force portable Ollama chat for Operations sessions', async () => {
+    const { readFileSync } = await import('node:fs')
+    const src = readFileSync(
+      path.join(__dirname, '../routes/api/send-stream.ts'),
+      'utf8',
+    )
+    expect(src).toContain(
+      'if (!operationsDispatch && requestModel)',
+    )
+    expect(src).toContain("chatMode = 'enhanced-claude'")
+    expect(src).toContain('require_model_lock: Boolean(operationsDispatch)')
+    expect(src).not.toContain('provider: operationsDispatch?.provider')
+    expect(src).not.toMatch(
+      /if \(operationsDispatch\) \{\s*chatMode = 'portable'/,
+    )
+    expect(src).toContain('createGatewaySession')
+    expect(src).toContain('finalizeRunIfNeeded')
+    expect(src).toContain('planSendStreamFinalization')
+    expect(src).toContain('execution_session=')
+    expect(src).toContain('streamChat ever starts')
+    expect(src).toContain('ops:${operationsDispatch.agentId}:${runId}')
   })
 
   it('formats the exact Operations smoke lines from the local cwd snapshot', async () => {
@@ -95,5 +145,23 @@ describe('operations-dispatch', () => {
         '3. 6f9b44d',
       ].join('\n'),
     )
+  })
+
+  it('gives independent Operations runs isolated Hermes sessions under framesengineering', async () => {
+    const {
+      buildOperationsExecutionSessionKey,
+      getOperationsFriendlySessionKey,
+      getOperationsSessionKey,
+      parseOperationsAgentId,
+    } = await import('./operations-dispatch')
+    const friendlyId = getOperationsSessionKey('framesengineering')
+    const first = buildOperationsExecutionSessionKey(friendlyId, 'run_stale')
+    const second = buildOperationsExecutionSessionKey(friendlyId, 'run_next')
+    expect(first).not.toBe(second)
+    expect(first).not.toBe(friendlyId)
+    expect(getOperationsFriendlySessionKey(first)).toBe(friendlyId)
+    expect(getOperationsFriendlySessionKey(second)).toBe(friendlyId)
+    expect(parseOperationsAgentId(first)).toBe('framesengineering')
+    expect(parseOperationsAgentId(second)).toBe('framesengineering')
   })
 })

@@ -16,6 +16,7 @@ HOST="127.0.0.1"
 PORT="3000"
 GATEWAY_URL="http://127.0.0.1:8642"
 DASHBOARD_URL="http://127.0.0.1:9119"
+HERMES_STORMBOT_HOME="${HERMES_HOME:-/Users/brianackley/.hermes-stormbot}"
 UID_NUM="$(id -u)"
 
 mkdir -p "$RUNTIME_DIR"
@@ -66,6 +67,10 @@ for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
 PY
 }
 
+gateway_http() {
+  curl --max-time 2 -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8642/health" || true
+}
+
 load_workspace_env() {
   if [[ -f "$ROOT/.env" ]]; then
     set -a
@@ -83,27 +88,48 @@ load_workspace_env() {
 }
 
 load_gateway_token() {
-  local token="${HERMES_API_TOKEN:-${CLAUDE_API_TOKEN:-}}"
-  local key=""
-  local file=""
-  if [[ -z "$token" ]]; then
-    for file in "$ROOT/.env" "$HOME/.hermes/.env"; do
-      for key in HERMES_API_TOKEN CLAUDE_API_TOKEN API_SERVER_KEY; do
-        token="$(read_env_key "$file" "$key" || true)"
+  local token=""
+  local err=""
+  local errfile=""
+  local recover="$ROOT/scripts/recover-gateway-api-key.py"
+  local attempt
+  local max_attempts="${HERMES_GATEWAY_WAIT_ATTEMPTS:-30}"
+  local sleep_s="${HERMES_GATEWAY_WAIT_SECONDS:-2}"
+  local health=""
+  [[ -f "$recover" ]] || die "gateway API key recovery script is missing"
+  errfile="$(mktemp -t hermes-gw-key.XXXXXX)"
+  for attempt in $(seq 1 "$max_attempts"); do
+    health="$(gateway_http)"
+    if [[ "$health" == "200" ]]; then
+      if token="$(python3 "$recover" --host 127.0.0.1 --port 8642 2>"$errfile")"; then
         if [[ -n "$token" ]]; then
-          break 2
+          rm -f "$errfile"
+          export HERMES_API_TOKEN="$token"
+          unset token
+          log "gateway token: recovered from live :8642 process"
+          return 0
         fi
-      done
-    done
-  fi
-  if [[ -n "$token" ]]; then
-    export HERMES_API_TOKEN="$token"
-    export CLAUDE_API_TOKEN="${CLAUDE_API_TOKEN:-$token}"
-    log "gateway token: present"
-  else
-    unset HERMES_API_TOKEN || true
-    log "gateway token: absent"
-  fi
+      fi
+      token="$(read_env_key "$HERMES_STORMBOT_HOME/.env" API_SERVER_KEY || true)"
+      if [[ -n "$token" ]]; then
+        rm -f "$errfile"
+        export HERMES_API_TOKEN="$token"
+        unset token
+        log "gateway token: recovered from dedicated HERMES_HOME env"
+        return 0
+      fi
+      err="$(tr '\n' ' ' <"$errfile" 2>/dev/null || true)"
+      rm -f "$errfile"
+      die "${err:-gateway API key unavailable (listener healthy but API_SERVER_KEY missing)}"
+    fi
+    err="$(tr '\n' ' ' <"$errfile" 2>/dev/null || true)"
+    if [[ "$attempt" -eq 1 || $((attempt % 5)) -eq 0 ]]; then
+      log "waiting for Hermes Agent :8642 (attempt ${attempt}/${max_attempts} http=${health:-000})"
+    fi
+    sleep "$sleep_s"
+  done
+  rm -f "$errfile"
+  die "${err:-gateway is not listening on 127.0.0.1:8642}"
 }
 
 workspace_http() {

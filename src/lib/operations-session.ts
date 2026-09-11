@@ -1,4 +1,5 @@
 export const OPERATIONS_SESSION_PREFIX = 'agent:main:ops-'
+export const OPERATIONS_ACTIVE_RUNS_QUERY_KEY = ['operations', 'active-runs'] as const
 // Operations cards must not stay "active" after a finished local turn.
 
 export function getOperationsSessionKey(agentId: string): string {
@@ -10,8 +11,26 @@ export function parseOperationsAgentId(
 ): string | null {
   const key = (sessionKey ?? '').trim()
   if (!key.startsWith(OPERATIONS_SESSION_PREFIX)) return null
-  const agentId = key.slice(OPERATIONS_SESSION_PREFIX.length).trim()
-  return agentId || null
+  const rest = key.slice(OPERATIONS_SESSION_PREFIX.length).trim()
+  if (!rest) return null
+  return rest.split(':')[0] || null
+}
+
+export function buildOperationsExecutionSessionKey(
+  friendlyId: string,
+  runId: string,
+): string {
+  const friendly = friendlyId.trim()
+  const id = runId.trim()
+  if (!friendly || !id) return friendly
+  return `${friendly}:${id}`
+}
+
+export function getOperationsFriendlySessionKey(
+  sessionKey: string | null | undefined,
+): string | null {
+  const agentId = parseOperationsAgentId(sessionKey)
+  return agentId ? getOperationsSessionKey(agentId) : null
 }
 
 export type OperationsAgentLiveStatus = 'idle' | 'active' | 'error'
@@ -35,17 +54,21 @@ export function deriveOperationsAgentStatus(session: {
     return 'idle'
   }
 
-  const updatedAt = Number(session.updatedAt)
   if (
-    (status.includes('run') ||
-      status.includes('active') ||
-      status.includes('progress') ||
-      status.includes('accepted')) &&
-    Number.isFinite(updatedAt) &&
-    Date.now() - updatedAt < 120_000
+    status.includes('run') ||
+    status.includes('active') ||
+    status.includes('progress') ||
+    status.includes('accepted') ||
+    status.includes('stalled')
   ) {
     return 'active'
   }
 
   return 'idle'
+}
+
+export function countActiveOperationsAgents(
+  statuses: Array<OperationsAgentLiveStatus | string | null | undefined>,
+): number {
+  return statuses.filter((status) => status === 'active').length
 }

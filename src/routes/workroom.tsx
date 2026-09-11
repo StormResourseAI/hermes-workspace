@@ -9,6 +9,7 @@ function WorkroomRoute() {
       title="FRAMES Workroom"
       className="h-full min-h-[640px] w-full border-0"
       allow="fullscreen"
+      referrerPolicy="origin"
     />
   )
 }
