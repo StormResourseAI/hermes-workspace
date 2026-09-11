@@ -136,18 +136,29 @@ export async function updatePersistedRun(
   })
 }
 
+function isTerminalRunStatus(status: PersistedRunState['status']): boolean {
+  return status === 'complete' || status === 'error'
+}
+
+function runHasVisibleResult(run: PersistedRunState): boolean {
+  return Boolean((run.assistantText || '').trim())
+}
+
 export async function appendRunText(
   sessionKey: string,
   runId: string,
   text: string,
   options?: { replace?: boolean },
 ): Promise<PersistedRunState | null> {
-  return updatePersistedRun(sessionKey, runId, (run) => ({
-    ...run,
-    status: 'active',
-    lastEventAt: Date.now(),
-    assistantText: options?.replace ? text : `${run.assistantText}${text}`,
-  }))
+  return updatePersistedRun(sessionKey, runId, (run) => {
+    if (isTerminalRunStatus(run.status)) return run
+    return {
+      ...run,
+      status: 'active',
+      lastEventAt: Date.now(),
+      assistantText: options?.replace ? text : `${run.assistantText}${text}`,
+    }
+  })
 }
 
 export async function setRunThinking(
@@ -155,12 +166,15 @@ export async function setRunThinking(
   runId: string,
   thinkingText: string,
 ): Promise<PersistedRunState | null> {
-  return updatePersistedRun(sessionKey, runId, (run) => ({
-    ...run,
-    status: 'active',
-    lastEventAt: Date.now(),
-    thinkingText,
-  }))
+  return updatePersistedRun(sessionKey, runId, (run) => {
+    if (isTerminalRunStatus(run.status)) return run
+    return {
+      ...run,
+      status: 'active',
+      lastEventAt: Date.now(),
+      thinkingText,
+    }
+  })
 }
 
 export async function upsertRunToolCall(
@@ -211,12 +225,33 @@ export async function markRunStatus(
   }))
 }
 
+export async function completeLiveRunsForSession(
+  sessionKey: string,
+  assistantText?: string,
+): Promise<void> {
+  const runs = await readRunsInDir(sessionDir(sessionKey)).catch(() => [])
+  await Promise.all(
+    runs
+      .filter((run) => !isTerminalRunStatus(run.status))
+      .map((run) =>
+        updatePersistedRun(sessionKey, run.runId, (current) => ({
+          ...current,
+          status: 'complete',
+          lastEventAt: Date.now(),
+          assistantText:
+            assistantText?.trim() || current.assistantText || current.thinkingText,
+        })),
+      ),
+  )
+}
+
 // A run that hasn't been touched in this long is considered orphaned (e.g.
 // the agent process crashed, the network dropped silently, or the user
 // navigated away during a `handoff` that never resolved). Treating these as
 // "active" makes every chat re-open show a phantom "Thinking…" indicator
 // until the 120s client-side failsafe clears it.
 const STALE_RUN_THRESHOLD_MS = 5 * 60 * 1000
+const RECENT_COMPLETE_WINDOW_MS = 2 * 60 * 1000
 
 async function readRunsInDir(dir: string): Promise<Array<PersistedRunState>> {
   const files = (await readdir(dir)).filter((name) => name.endsWith('.json'))
@@ -241,9 +276,28 @@ export async function getActiveRunForSession(
     const runs = await readRunsInDir(sessionDir(sessionKey))
     const now = Date.now()
     const candidates = runs
-      .filter((run) => !['complete', 'error'].includes(run.status))
-      .filter((run) => now - run.updatedAt < STALE_RUN_THRESHOLD_MS)
-      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .filter((run) => {
+        const age = now - run.updatedAt
+        if (run.status === 'complete' || run.status === 'error') {
+          return age < RECENT_COMPLETE_WINDOW_MS
+        }
+        return age < STALE_RUN_THRESHOLD_MS
+      })
+      .sort((a, b) => {
+        const aHasResult = Boolean(runHasVisibleResult(a))
+        const bHasResult = Boolean(runHasVisibleResult(b))
+        const aLive =
+          a.status !== 'complete' &&
+          a.status !== 'error' &&
+          !aHasResult
+        const bLive =
+          b.status !== 'complete' &&
+          b.status !== 'error' &&
+          !bHasResult
+        if (aLive !== bLive) return aLive ? -1 : 1
+        if (aHasResult !== bHasResult) return aHasResult ? -1 : 1
+        return b.updatedAt - a.updatedAt
+      })
     return candidates[0] ?? null
   } catch {
     return null

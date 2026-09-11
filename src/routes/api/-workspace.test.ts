@@ -2,7 +2,11 @@ import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { loadWorkspaceCatalog, saveWorkspaceSelection } from './workspace'
+import {
+  loadAssistantWorkspaceScope,
+  loadWorkspaceCatalog,
+  saveWorkspaceSelection,
+} from './workspace'
 
 const originalEnv = { ...process.env }
 let tempRoot = ''
@@ -121,6 +125,39 @@ describe('workspace API catalog semantics', () => {
       ),
     ).resolves.toBe(`${project}
 `)
+  })
+
+  it('assistant scope uses framesengineering terminal.cwd, not last UI workspace', async () => {
+    const stormbotOs = await makeDir(tempRoot, 'stormbot-os')
+    const otherProject = await makeDir(tempRoot, 'other-project')
+    const profileHome = path.join(
+      process.env.HERMES_HOME!,
+      'profiles',
+      'framesengineering',
+    )
+    await fs.mkdir(profileHome, { recursive: true })
+    await fs.writeFile(
+      path.join(profileHome, 'config.yaml'),
+      `terminal:\n  backend: local\n  cwd: ${JSON.stringify(stormbotOs)}\n`,
+      'utf-8',
+    )
+    await fs.mkdir(path.join(profileHome, 'webui_state'), { recursive: true })
+    await fs.writeFile(
+      path.join(profileHome, 'webui_state', 'workspaces.json'),
+      JSON.stringify({
+        workspaces: [{ name: 'Other', path: otherProject }],
+        last: otherProject,
+      }),
+      'utf-8',
+    )
+
+    const scope = await loadAssistantWorkspaceScope()
+
+    expect(scope).toEqual({
+      path: stormbotOs,
+      folderName: 'stormbot-os',
+      isValid: true,
+    })
   })
 
   it('persists the selected workspace in profile-local Web UI state', async () => {

@@ -8,6 +8,7 @@
  */
 import os from 'node:os'
 import path from 'node:path'
+import { existsSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import YAML from 'yaml'
 import { createFileRoute } from '@tanstack/react-router'
@@ -187,16 +188,41 @@ async function firstValidDirectory(
   return null
 }
 
+const STORMBOT_PROFILE_NAME = 'framesengineering'
+
+function hermesRoot(): string {
+  return (
+    process.env.HERMES_HOME ??
+    process.env.CLAUDE_HOME ??
+    path.join(os.homedir(), '.hermes')
+  )
+}
+
 function activeProfileHome(): string {
+  const stormbotHome = path.join(hermesRoot(), 'profiles', STORMBOT_PROFILE_NAME)
+  if (existsSync(stormbotHome)) return stormbotHome
   try {
     const active = getActiveProfileName()
     return readProfile(active).path
   } catch {
-    return (
-      process.env.HERMES_HOME ??
-      process.env.CLAUDE_HOME ??
-      path.join(os.homedir(), '.hermes')
-    )
+    return hermesRoot()
+  }
+}
+
+/** Profile terminal.cwd / default workspace — not last UI selection. */
+export async function loadAssistantWorkspaceScope(): Promise<{
+  path: string
+  folderName: string
+  isValid: boolean
+}> {
+  const configured = await configuredDefaultWorkspace()
+  if (!configured?.path) {
+    return { path: '', folderName: '', isValid: false }
+  }
+  return {
+    path: configured.path,
+    folderName: extractFolderName(configured.path),
+    isValid: true,
   }
 }
 

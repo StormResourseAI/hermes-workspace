@@ -15,6 +15,7 @@ import {
 } from '../../server/session-utils'
 import { isAuthenticated } from '@/server/auth-middleware'
 import { getLocalSession, getLocalMessages } from '../../server/local-session-store'
+import { parseOperationsAgentId } from '../../lib/operations-session'
 
 export const Route = createFileRoute('/api/history')({
   server: {
@@ -97,6 +98,25 @@ export const Route = createFileRoute('/api/history')({
               })),
             })
           }
+          if (parseOperationsAgentId(sessionKey)) {
+            const localSession = getLocalSession(sessionKey)
+            if (localSession) {
+              const localMessages = getLocalMessages(sessionKey)
+              return json({
+                sessionKey,
+                sessionId: sessionKey,
+                messages: localMessages.map((m, index) => ({
+                  id: m.id,
+                  role: m.role,
+                  content: [{ type: 'text', text: m.content }],
+                  timestamp: m.timestamp,
+                  historyIndex: index,
+                })),
+                source: 'local',
+              })
+            }
+          }
+
           let messages: Awaited<ReturnType<typeof getMessages>> = []
           try {
             messages = await getMessages(sessionKey)

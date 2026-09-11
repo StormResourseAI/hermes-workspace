@@ -5,6 +5,10 @@ import { toast } from '@/components/ui/toast'
 import { fetchCronJobs } from '@/lib/cron-api'
 import { fetchSessions, type GatewaySession } from '@/lib/gateway-api'
 import { formatModelName, formatRelativeTime } from '@/screens/dashboard/lib/formatters'
+import {
+  deriveOperationsAgentStatus,
+  getOperationsSessionKey,
+} from '@/lib/operations-session'
 
 // Claude-Workspace adapter: Operations is backed by Hermes profiles
 // (each profile = one persistent agent). Profiles live at ~/.hermes/profiles/<name>/
@@ -429,15 +433,7 @@ function getAgentSessions(agentId: string, sessions: GatewaySession[]): GatewayS
 }
 
 function getAgentStatus(latestSession: GatewaySession | null): OperationsAgentStatus {
-  if (!latestSession) return 'idle'
-
-  const status = readString(latestSession.status).toLowerCase()
-  if (status.includes('fail') || status.includes('error')) return 'error'
-
-  const updatedAt = readTimestamp(latestSession.updatedAt)
-  if (updatedAt && Date.now() - updatedAt < 120_000) return 'active'
-
-  return 'idle'
+  return deriveOperationsAgentStatus(latestSession)
 }
 
 function getProgressStatus(
@@ -522,9 +518,7 @@ function buildSessionOutput(
   }
 }
 
-export function getOperationsSessionKey(agentId: string): string {
-  return `agent:main:ops-${agentId}`
-}
+export { getOperationsSessionKey }
 
 export function useOperations() {
   const queryClient = useQueryClient()

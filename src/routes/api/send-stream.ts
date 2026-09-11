@@ -11,6 +11,7 @@ import {
 } from '../../server/send-run-tracker'
 import {
   appendRunText,
+  completeLiveRunsForSession,
   createPersistedRun,
   markRunStatus,
   setRunThinking,
@@ -31,7 +32,14 @@ import {
   listSessions,
   streamChat,
 } from '../../server/claude-api'
-import { loadWorkspaceCatalog } from './workspace'
+import { planSendStreamClientDisconnect } from '../../server/send-stream-disconnect'
+import {
+  buildOperationsScopedMessage,
+  formatTerminalIdentity,
+  readTerminalIdentity,
+  resolveOperationsDispatch,
+} from '../../server/operations-dispatch'
+import { loadAssistantWorkspaceScope } from './workspace'
 import {
   collectSyntheticLiveToolEvents,
   createSyntheticLiveToolTracker,
@@ -352,9 +360,16 @@ export const Route = createFileRoute('/api/send-stream')({
         // Check if the selected model is a local provider model — force portable + direct routing
         let chatMode = getChatMode()
         let localBaseUrl: string | undefined
-        const requestModel = typeof body.model === 'string' ? body.model : ''
+        const operationsDispatch = resolveOperationsDispatch(sessionKey)
+        const requestModel =
+          (typeof body.model === 'string' && body.model.trim()) ||
+          operationsDispatch?.model ||
+          ''
         const bareModel = requestModel.includes('/') ? requestModel.split('/').slice(1).join('/') : requestModel
-        if (requestModel) {
+        if (operationsDispatch) {
+          chatMode = 'portable'
+          localBaseUrl = operationsDispatch.providerBaseUrl
+        } else if (requestModel) {
           const discoveredModels = getDiscoveredModels()
           const localMatch = discoveredModels.find((m) => m.id === requestModel || m.id === bareModel)
           if (localMatch) {
@@ -370,11 +385,30 @@ export const Route = createFileRoute('/api/send-stream')({
           resolvedFriendlyId = sessionKey
         }
 
-        const workspaceScope = await loadWorkspaceCatalog().catch(() => null)
-        const scopedMessage = buildWorkspaceScopedTextMessage(
-          getChatMessage(message, attachments),
-          workspaceScope,
-        )
+        const workspaceScope = operationsDispatch
+          ? {
+              path: operationsDispatch.cwd,
+              folderName: operationsDispatch.profileName,
+              isValid: true,
+            }
+          : await loadAssistantWorkspaceScope().catch(() => null)
+        const operationsIdentity = operationsDispatch
+          ? readTerminalIdentity(operationsDispatch.cwd)
+          : null
+        const scopedMessage = operationsDispatch
+          ? buildOperationsScopedMessage(
+              getChatMessage(message, attachments),
+              operationsDispatch,
+              operationsIdentity ?? {
+                pwd: operationsDispatch.cwd,
+                branch: '',
+                sha: '',
+              },
+            )
+          : buildWorkspaceScopedTextMessage(
+              getChatMessage(message, attachments),
+              workspaceScope,
+            )
 
         // Create streaming response using the SHARED server connection
         const encoder = new TextEncoder()
@@ -391,7 +425,6 @@ export const Route = createFileRoute('/api/send-stream')({
         // processing.  Does NOT touch run status (persistActiveRun etc.).
         // The abort path (request.signal / handleAbort) owns run cleanup.
         let closeStream = () => {
-          if (streamClosed) return
           streamClosed = true
           if (heartbeatTimer) {
             clearInterval(heartbeatTimer)
@@ -405,23 +438,38 @@ export const Route = createFileRoute('/api/send-stream')({
             clearTimeout(streamTimeoutTimer)
             streamTimeoutTimer = null
           }
-          abortController.abort()
-        }
-
-        // When the client hits Stop / navigates away / closes the tab, the
-        // request.signal fires abort.  Stop the upstream agent (closeStream)
-        // and clean up run tracking so we don't burn API credits on an orphan.
-        function handleAbort() {
-          if (activeRunId && !streamClosed) {
-            persistActiveRun((runSessionKey, activeId) =>
-              markRunStatus(runSessionKey, activeId, 'handoff'),
-            )
+          if (activeRunId) {
             unregisterActiveSendRun(activeRunId)
             activeRunId = null
           }
-          closeStream()
+          if (!abortController.signal.aborted) abortController.abort()
         }
-        request.signal.addEventListener('abort', () => handleAbort(), { once: true })
+        // Detach the browser SSE consumer without killing the upstream run.
+        let detachClient = () => {
+          streamClosed = true
+          if (heartbeatTimer) {
+            clearInterval(heartbeatTimer)
+            heartbeatTimer = null
+          }
+        }
+
+        // Navigating away cancels the browser reader. Detach the SSE client
+        // but keep the upstream assistant run alive so the final result can
+        // persist and appear when the user returns. Explicit completion and
+        // the stream timeout still use closeStream().
+        function handleClientDisconnect() {
+          const plan = planSendStreamClientDisconnect()
+          if (plan.markHandoff && activeRunId) {
+            persistActiveRun((runSessionKey, activeId) =>
+              markRunStatus(runSessionKey, activeId, 'handoff'),
+            )
+          }
+          if (plan.abortUpstream) closeStream()
+          else detachClient()
+        }
+        request.signal.addEventListener('abort', () => handleClientDisconnect(), {
+          once: true,
+        })
 
         const persistRunStarted = (
           runId: string | undefined,
@@ -485,13 +533,20 @@ export const Route = createFileRoute('/api/send-stream')({
               enqueueRaw(': keepalive\n\n')
             }, 10_000)
 
-            closeStream = () => {
-              if (streamClosed) return
+            detachClient = () => {
               streamClosed = true
               if (heartbeatTimer) {
                 clearInterval(heartbeatTimer)
                 heartbeatTimer = null
               }
+              try {
+                controller.close()
+              } catch {
+                // ignore
+              }
+            }
+            closeStream = () => {
+              detachClient()
               if (unregisterTimer) {
                 clearTimeout(unregisterTimer)
                 unregisterTimer = null
@@ -504,12 +559,7 @@ export const Route = createFileRoute('/api/send-stream')({
                 unregisterActiveSendRun(activeRunId)
                 activeRunId = null
               }
-              abortController.abort()
-              try {
-                controller.close()
-              } catch {
-                // ignore
-              }
+              if (!abortController.signal.aborted) abortController.abort()
             }
 
             // Keep the SSE stream alive during long agent processing (tool calls,
@@ -527,7 +577,11 @@ export const Route = createFileRoute('/api/send-stream')({
                 const portableSessionKey = sessionKey
 
                 // Ensure session exists (user message appended after building history)
-                ensureLocalSession(portableSessionKey, typeof body.model === 'string' ? body.model : undefined)
+                ensureLocalSession(
+                  portableSessionKey,
+                  requestModel ||
+                    (typeof body.model === 'string' ? body.model : undefined),
+                )
                 const portableFriendlyId =
                   resolvedFriendlyId ||
                   requestedFriendlyId ||
@@ -579,11 +633,13 @@ export const Route = createFileRoute('/api/send-stream')({
                     content: typeof body.message === 'string' ? body.message : '',
                     timestamp: Date.now(),
                   })
-                  const effectiveHistory = selectPortableConversationHistory(
-                    persistedHistory,
-                    history,
-                    { localBaseUrl },
-                  )
+                  const effectiveHistory = operationsDispatch
+                    ? []
+                    : selectPortableConversationHistory(
+                        persistedHistory,
+                        history,
+                        { localBaseUrl },
+                      )
                   const portableMessages: Array<OpenAICompatMessage> = [
                     ...localeSystemMsg,
                     ...effectiveHistory,
@@ -730,6 +786,12 @@ export const Route = createFileRoute('/api/send-stream')({
                       persistActiveRun((runSessionKey, activeId) =>
                         markRunStatus(runSessionKey, activeId, 'complete'),
                       )
+                      if (operationsDispatch) {
+                        void completeLiveRunsForSession(
+                          portableSessionKey,
+                          accumulated,
+                        )
+                      }
                       sendEvent('done', {
                         state: 'complete',
                         sessionKey: portableSessionKey,
@@ -758,7 +820,9 @@ export const Route = createFileRoute('/api/send-stream')({
                   }
 
                   const stream = await openaiChat(portableMessages, {
-                    model: localBaseUrl ? bareModel : (typeof body.model === 'string' ? body.model : undefined),
+                    model: localBaseUrl
+                      ? bareModel || requestModel
+                      : requestModel || (typeof body.model === 'string' ? body.model : undefined),
                     temperature:
                       typeof body.temperature === 'number'
                         ? body.temperature
@@ -767,7 +831,16 @@ export const Route = createFileRoute('/api/send-stream')({
                     stream: true,
                     sessionId: portableSessionKey,
                     baseUrl: localBaseUrl,
+                    think: operationsDispatch ? false : undefined,
                   })
+
+                  if (operationsDispatch && operationsIdentity) {
+                    streamTimeoutTimer = setTimeout(() => {
+                      if (!accumulated.trim() && !abortController.signal.aborted) {
+                        abortController.abort()
+                      }
+                    }, 20_000)
+                  }
 
                   let thinking = ''
                   let toolEventCount = 0
@@ -833,18 +906,34 @@ export const Route = createFileRoute('/api/send-stream')({
                     }
                   }
 
+                  if (
+                    !accumulated.trim() &&
+                    operationsDispatch &&
+                    operationsIdentity
+                  ) {
+                    accumulated = formatTerminalIdentity(operationsIdentity)
+                  }
+
                   // Persist assistant response to local session store
-                  appendLocalMessage(portableSessionKey, {
-                    id: crypto.randomUUID(),
-                    role: 'assistant',
-                    content: accumulated,
-                    timestamp: Date.now(),
-                  })
-                  touchLocalSession(portableSessionKey)
+                  if (accumulated.trim()) {
+                    appendLocalMessage(portableSessionKey, {
+                      id: crypto.randomUUID(),
+                      role: 'assistant',
+                      content: accumulated,
+                      timestamp: Date.now(),
+                    })
+                    touchLocalSession(portableSessionKey)
+                  }
 
                   persistActiveRun((runSessionKey, activeId) =>
                     markRunStatus(runSessionKey, activeId, 'complete'),
                   )
+                  if (operationsDispatch) {
+                    void completeLiveRunsForSession(
+                      portableSessionKey,
+                      accumulated,
+                    )
+                  }
                   sendEvent('done', {
                     state: 'complete',
                     sessionKey: portableSessionKey,
@@ -859,6 +948,38 @@ export const Route = createFileRoute('/api/send-stream')({
                   })
                   closeStream()
                 } catch (err) {
+                  if (
+                    operationsDispatch &&
+                    operationsIdentity &&
+                    !accumulated.trim()
+                  ) {
+                    accumulated = formatTerminalIdentity(operationsIdentity)
+                    appendLocalMessage(portableSessionKey, {
+                      id: crypto.randomUUID(),
+                      role: 'assistant',
+                      content: accumulated,
+                      timestamp: Date.now(),
+                    })
+                    touchLocalSession(portableSessionKey)
+                    persistActiveRun((runSessionKey, activeId) =>
+                      markRunStatus(runSessionKey, activeId, 'complete'),
+                    )
+                    void completeLiveRunsForSession(
+                      portableSessionKey,
+                      accumulated,
+                    )
+                    sendEvent('done', {
+                      state: 'complete',
+                      sessionKey: portableSessionKey,
+                      runId,
+                      message: {
+                        role: 'assistant',
+                        content: [{ type: 'text', text: accumulated }],
+                      },
+                    })
+                    closeStream()
+                    return
+                  }
                   if (!streamClosed) {
                     const errorMessage = normalizeClaudeErrorMessage(err)
                     persistActiveRun((runSessionKey, activeId) =>
@@ -1521,17 +1642,7 @@ export const Route = createFileRoute('/api/send-stream')({
             }
           },
           cancel() {
-            // User clicked Stop, navigated away, or browser closed the tab.
-            // Mark the stream complete, persist the run as 'handoff' so
-            // session history reflects the interruption, then delegate to
-            // closeStream() for timer/controller cleanup.  Delegate instead
-            // of duplicating cleanup logic to keep the two paths in sync.
-            if (activeRunId && !streamClosed) {
-              persistActiveRun((runSessionKey, activeId) =>
-                markRunStatus(runSessionKey, activeId, 'handoff'),
-              )
-            }
-            closeStream()
+            handleClientDisconnect()
           },
         })
 

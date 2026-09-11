@@ -178,7 +178,10 @@ export function OperationsAgentCard({
   const displayName = stripEmojiPrefix(agent.name)
   const [showCronPanel, setShowCronPanel] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
-  const { messages, sendMessage, isSending, error } = useAgentChat(agent.sessionKey)
+  const { messages, sendMessage, isSending, error } = useAgentChat(
+    agent.sessionKey,
+    { model: agent.model, profile: agent.id },
+  )
   const cronJobCount = agent.jobs.length
   const isActive = agent.status === 'active' && !isPaused
 

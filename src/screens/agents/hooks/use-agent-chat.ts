@@ -46,14 +46,35 @@ function normalizeMessage(
   }
 }
 
-export function useAgentChat(sessionKey: string) {
+export function useAgentChat(
+  sessionKey: string,
+  opts?: { model?: string; profile?: string },
+) {
   const queryClient = useQueryClient()
 
   const historyQuery = useQuery({
     queryKey: ['operations', 'chat', sessionKey],
     queryFn: async () => {
       try {
-        // Try the ClawSuite history endpoint first (uses sessionKey param)
+        // Operations persists to the local session store. Prefer the
+        // local-first adapter so an empty gateway transcript cannot hide
+        // the visible assistant result.
+        const localRes = await fetch(
+          `/api/session-history?key=${encodeURIComponent(sessionKey)}&limit=50`,
+        )
+        if (localRes.ok) {
+          const localData = await localRes.json()
+          if (
+            Array.isArray(localData.messages) &&
+            (localData.source === 'local' || localData.messages.length > 0)
+          ) {
+            return localData.messages as SessionHistoryMessage[]
+          }
+        }
+      } catch {
+        // fall through
+      }
+      try {
         const res = await fetch(`/api/history?sessionKey=${encodeURIComponent(sessionKey)}&limit=50`)
         if (res.ok) {
           const data = await res.json()
@@ -62,7 +83,6 @@ export function useAgentChat(sessionKey: string) {
       } catch {
         // fall through
       }
-      // Fallback to gateway-api
       const response = await fetchSessionHistory(sessionKey, { limit: 50 })
       if (response.ok === false) return []
       return Array.isArray(response.messages) ? response.messages : []
@@ -73,7 +93,10 @@ export function useAgentChat(sessionKey: string) {
 
   const sendMutation = useMutation({
     mutationFn: async (message: string) => {
-      await sendToSession(sessionKey, message)
+      await sendToSession(sessionKey, message, {
+        model: opts?.model,
+        profile: opts?.profile,
+      })
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
