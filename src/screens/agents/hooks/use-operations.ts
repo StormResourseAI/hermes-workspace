@@ -5,6 +5,11 @@ import { toast } from '@/components/ui/toast'
 import { fetchCronJobs } from '@/lib/cron-api'
 import { fetchSessions, type GatewaySession } from '@/lib/gateway-api'
 import { formatModelName, formatRelativeTime } from '@/screens/dashboard/lib/formatters'
+import {
+  deriveOperationsAgentStatus,
+  getOperationsSessionKey,
+  OPERATIONS_ACTIVE_RUNS_QUERY_KEY,
+} from '@/lib/operations-session'
 
 // Claude-Workspace adapter: Operations is backed by Hermes profiles
 // (each profile = one persistent agent). Profiles live at ~/.hermes/profiles/<name>/
@@ -428,16 +433,46 @@ function getAgentSessions(agentId: string, sessions: GatewaySession[]): GatewayS
     })
 }
 
-function getAgentStatus(latestSession: GatewaySession | null): OperationsAgentStatus {
-  if (!latestSession) return 'idle'
+type ActiveRunSummary = {
+  runId: string
+  sessionKey: string
+  friendlyId?: string
+  status: string
+  updatedAt: number
+}
 
-  const status = readString(latestSession.status).toLowerCase()
-  if (status.includes('fail') || status.includes('error')) return 'error'
+async function fetchActiveRuns(): Promise<ActiveRunSummary[]> {
+  const response = await fetch('/api/runs/active')
+  if (!response.ok) {
+    throw new Error(`Failed to load active runs (${response.status})`)
+  }
+  const payload = (await response.json().catch(() => ({}))) as {
+    ok?: boolean
+    runs?: ActiveRunSummary[]
+  }
+  return Array.isArray(payload.runs) ? payload.runs : []
+}
 
-  const updatedAt = readTimestamp(latestSession.updatedAt)
-  if (updatedAt && Date.now() - updatedAt < 120_000) return 'active'
-
-  return 'idle'
+function getCanonicalAgentRun(
+  agentId: string,
+  sessionKey: string,
+  runs: ActiveRunSummary[],
+): ActiveRunSummary | null {
+  return (
+    runs.find(
+      (run) =>
+        run.sessionKey === sessionKey ||
+        run.friendlyId === sessionKey ||
+        run.sessionKey.startsWith(`${sessionKey}:`) ||
+        (run.friendlyId ?? '').startsWith(`${sessionKey}:`),
+    ) ??
+    runs.find(
+      (run) =>
+        run.sessionKey.includes(agentId) ||
+        (run.friendlyId ?? '').includes(agentId),
+    ) ??
+    null
+  )
 }
 
 function getProgressStatus(
@@ -522,9 +557,7 @@ function buildSessionOutput(
   }
 }
 
-export function getOperationsSessionKey(agentId: string): string {
-  return `agent:main:ops-${agentId}`
-}
+export { getOperationsSessionKey }
 
 export function useOperations() {
   const queryClient = useQueryClient()
@@ -553,6 +586,12 @@ export function useOperations() {
     refetchInterval: 30_000,
   })
 
+  const activeRunsQuery = useQuery({
+    queryKey: OPERATIONS_ACTIVE_RUNS_QUERY_KEY,
+    queryFn: fetchActiveRuns,
+    refetchInterval: 2_000,
+  })
+
   const agents = useMemo(() => {
     const parsed = configQuery.data?.parsed
     const allAgents = normalizeAgentList(parsed?.agents?.list)
@@ -561,6 +600,7 @@ export function useOperations() {
     const configAgents = allAgents.filter((a) => !HIDDEN_AGENTS.has(a.id))
     const sessions = sessionsQuery.data ?? []
     const cronJobs = cronJobsQuery.data ?? []
+    const activeRuns = activeRunsQuery.data ?? []
 
     return configAgents.map((agent) => {
       const meta = loadAgentMeta(agent.id, {
@@ -582,7 +622,14 @@ export function useOperations() {
           .filter((value): value is number => value !== null)
           .sort((left, right) => right - left)[0] ??
         null
-      const status = getAgentStatus(latestSession)
+      const sessionKey = getOperationsSessionKey(agent.id)
+      const canonicalRun = getCanonicalAgentRun(agent.id, sessionKey, activeRuns)
+      const status = canonicalRun
+        ? deriveOperationsAgentStatus({
+            status: canonicalRun.status,
+            updatedAt: canonicalRun.updatedAt,
+          })
+        : 'idle'
       const recentOutputs = [
         ...agentSessions.map((session) => buildSessionOutput(session, agent.id)),
         ...jobs.map((job) => buildCronOutput(job, agent.id)),
@@ -598,7 +645,7 @@ export function useOperations() {
         meta,
         shortModel: formatModelName(agent.model || 'Custom'),
         status,
-        sessionKey: getOperationsSessionKey(agent.id),
+        sessionKey,
         sessions: agentSessions,
         latestSession,
         jobs,
@@ -619,6 +666,7 @@ export function useOperations() {
     configQuery.data,
     sessionsQuery.data,
     cronJobsQuery.data,
+    activeRunsQuery.data,
     metaVersion,
   ])
 
@@ -776,6 +824,7 @@ export function useOperations() {
         queryClient.invalidateQueries({ queryKey: ['operations', 'config'] }),
         queryClient.invalidateQueries({ queryKey: ['operations', 'sessions'] }),
         queryClient.invalidateQueries({ queryKey: ['operations', 'cron'] }),
+        queryClient.invalidateQueries({ queryKey: OPERATIONS_ACTIVE_RUNS_QUERY_KEY }),
       ])
     },
     slugifyJobLabel,

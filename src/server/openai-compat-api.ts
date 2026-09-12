@@ -91,6 +91,8 @@ export type OpenAIChatOptions = {
   sessionId?: string
   /** Override the base URL (e.g. for local providers). Bypasses gateway. */
   baseUrl?: string
+  /** Ollama / Qwen thinking switch. false forces visible content tokens. */
+  think?: boolean
 }
 
 type OpenAIChatRequest = {
@@ -101,6 +103,7 @@ type OpenAIChatRequest = {
   }>
   stream: boolean
   temperature?: number
+  think?: boolean
 }
 
 type OpenAIChatCompletionResponse = {
@@ -124,6 +127,9 @@ export async function buildRequestBody(
     messages,
     stream: options.stream === true,
     temperature: options.temperature,
+    ...(options.think === false || options.think === true
+      ? { think: options.think }
+      : {}),
   }
 }
 
@@ -280,7 +286,8 @@ export async function openaiChat(
 ): Promise<string | AsyncGenerator<StreamChunkType, void, void>> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   const bearer = getBearerToken()
-  if (bearer) {
+  const isLocalOllama = (options.baseUrl || '').includes('127.0.0.1:11434')
+  if (bearer && !isLocalOllama) {
     headers['Authorization'] = `Bearer ${bearer}`
   }
   // Session continuity is part of request routing, not authentication.

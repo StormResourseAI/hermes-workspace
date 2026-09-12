@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { chatQueryKeys, fetchHistory } from '../chat-queries'
+import { preferServerPortableHistory } from '../portable-history-recovery'
 import { getMessageTimestamp, textFromMessage } from '../utils'
 import {
   cleanupExpiredPendingSends,
@@ -309,10 +310,10 @@ export function useChatHistory({
     normalizedForcedSessionKey || explicitRouteSessionKey,
   )
   const shouldFetchHistory =
-    !portableMode &&
-    !isNewChat &&
+    (portableMode || !isNewChat) &&
     Boolean(sessionKeyForHistory) &&
-    (canFetchWithoutSessions ||
+    (portableMode ||
+      canFetchWithoutSessions ||
       (!isRedirecting &&
         (hasDirectSessionKey || !sessionsReady || activeExists)))
 
@@ -333,7 +334,16 @@ export function useChatHistory({
     queryKey: historyKey,
     queryFn: async function fetchHistoryForSession() {
       if (portableMode) {
-        return readPortableHistory()
+        const local = readPortableHistory()
+        try {
+          const server = await fetchHistory({
+            sessionKey: 'main',
+            friendlyId: 'main',
+          })
+          return preferServerPortableHistory(server, local)
+        } catch {
+          return local
+        }
       }
 
       const cached = queryClient.getQueryData(historyKey)

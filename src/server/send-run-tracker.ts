@@ -24,3 +24,11 @@ export function hasActiveSendRun(runId: string | null | undefined): boolean {
   if (!runId) return false
   return getActiveRuns().has(runId)
 }
+
+export function listActiveSendRunIds(): string[] {
+  return [...getActiveRuns()]
+}
+
+export function resetActiveSendRunsForTests(): void {
+  getActiveRuns().clear()
+}

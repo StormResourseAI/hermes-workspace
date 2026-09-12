@@ -10,6 +10,12 @@ import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 import { isAuthenticated } from '../../server/auth-middleware'
 import { requireJsonContentType } from '../../server/rate-limit'
+import { resolveOperationsDispatch } from '../../server/operations-dispatch'
+import {
+  parseSendStreamSseBuffer,
+  resolveSessionSendResult,
+  shouldStopSessionSendWait,
+} from '../../server/session-send-result'
 
 export const Route = createFileRoute('/api/session-send')({
   server: {
@@ -24,9 +30,14 @@ export const Route = createFileRoute('/api/session-send')({
           const body = (await request.json()) as {
             sessionKey?: string
             message?: string
+            model?: string
+            profile?: string
           }
           const sessionKey = (body.sessionKey || '').trim()
           const message = (body.message || '').trim()
+          const dispatch = resolveOperationsDispatch(sessionKey)
+          const model = (body.model || dispatch?.model || '').trim()
+          const profile = (body.profile || dispatch?.profileName || '').trim()
           if (!sessionKey) {
             return json(
               { ok: false, error: 'sessionKey is required' },
@@ -51,7 +62,7 @@ export const Route = createFileRoute('/api/session-send')({
           const internalPort = process.env.PORT || '3000'
           const url = new URL('/api/send-stream', `http://127.0.0.1:${internalPort}`)
           const cookie = request.headers.get('cookie') || ''
-          fetch(url, {
+          const hop = fetch(url, {
             method: 'POST',
             headers: {
               'content-type': 'application/json',
@@ -60,11 +71,85 @@ export const Route = createFileRoute('/api/session-send')({
             body: JSON.stringify({
               sessionKey,
               message,
+              model: model || undefined,
+              profile: profile || undefined,
             }),
-          }).catch(() => {
-            // swallow; UI discovers failures via next /api/session-history poll
+          }).catch(() => null)
+
+          if (dispatch) {
+            const upstream = await hop
+            if (!upstream) {
+              const failed = resolveSessionSendResult({ networkFailed: true })
+              return json(
+                { ok: false, error: failed.error, sessionKey },
+                { status: failed.status },
+              )
+            }
+            if (!upstream.ok) {
+              const payload = (await upstream.json().catch(() => ({}))) as {
+                error?: string
+              }
+              const failed = resolveSessionSendResult({
+                upstreamStatus: upstream.status,
+                upstreamError:
+                  typeof payload.error === 'string' ? payload.error : undefined,
+              })
+              return json(
+                { ok: false, error: failed.error, sessionKey },
+                { status: failed.status },
+              )
+            }
+            let buf = ''
+            if (upstream.body) {
+              const reader = upstream.body.getReader()
+              const decoder = new TextDecoder()
+              const deadline = Date.now() + 15_000
+              while (Date.now() < deadline) {
+                const { done, value } = await reader.read()
+                if (done) break
+                buf += decoder.decode(value, { stream: true })
+                if (shouldStopSessionSendWait(parseSendStreamSseBuffer(buf))) {
+                  break
+                }
+              }
+              try {
+                await reader.cancel()
+              } catch {
+                // Detach; send-stream keeps the run alive in the background.
+              }
+            }
+            const result = resolveSessionSendResult({
+              upstreamStatus: upstream.status,
+              sse: parseSendStreamSseBuffer(buf),
+            })
+            if (!result.ok) {
+              return json(
+                {
+                  ok: false,
+                  error: result.error,
+                  sessionKey,
+                  runId: result.runId,
+                },
+                { status: result.status },
+              )
+            }
+            return json({
+              ok: true,
+              sessionKey,
+              queued: true,
+              runId: result.runId,
+              model: model || undefined,
+              profile: profile || undefined,
+            })
+          }
+
+          return json({
+            ok: true,
+            sessionKey,
+            queued: true,
+            model: model || undefined,
+            profile: profile || undefined,
           })
-          return json({ ok: true, sessionKey, queued: true })
         } catch (error) {
           return json(
             {

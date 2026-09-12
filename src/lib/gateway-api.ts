@@ -175,14 +175,23 @@ export type SendToSessionResponse = {
 export async function sendToSession(
   sessionKey: string,
   message: string,
+  opts?: { model?: string; profile?: string },
 ): Promise<SendToSessionResponse> {
   const controller = new AbortController()
-  const timeout = globalThis.setTimeout(() => controller.abort(), 30000)
+  const timeout = globalThis.setTimeout(
+    () => controller.abort(),
+    opts?.profile || opts?.model ? 90_000 : 30_000,
+  )
   try {
     const response = await fetch(makeEndpoint('/api/session-send'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sessionKey, message }),
+      body: JSON.stringify({
+        sessionKey,
+        message,
+        model: opts?.model,
+        profile: opts?.profile,
+      }),
       signal: controller.signal,
     })
     const payload = (await response.json().catch(() => ({}))) as SendToSessionResponse

@@ -87,6 +87,17 @@ async function isClaudeAgentHealthy(port = 8642): Promise<boolean> {
 }
 
 const config = defineConfig(({ mode, command }) => {
+  // Background/job-control launches keep a TTY attached. Vite then binds
+  // CLI shortcuts on stdin, which delivers SIGTTIN and freezes the process
+  // while the LISTEN socket stays up (HTTP connects, then hangs).
+  if (command === 'serve') {
+    process.env.CI = process.env.CI || 'true'
+    try {
+      process.stdin.pause()
+    } catch {
+      // ignore — stdin may already be /dev/null
+    }
+  }
   const env = loadEnv(mode, process.cwd(), '')
   // Bridge loadEnv into process.env for server-side SSR runtime code that
   // reads env vars directly from process.env (e.g. getBearerToken() in
@@ -493,8 +504,9 @@ const config = defineConfig(({ mode, command }) => {
         'Cross-Origin-Opener-Policy': 'same-origin',
         'Cross-Origin-Embedder-Policy': 'credentialless',
       },
-      // Force IPv4 — 'localhost' resolves to ::1 (IPv6) on Windows, breaking connectivity
-      host: '0.0.0.0',
+      // Loopback only for local cockpit use. 127.0.0.1 is IPv4, so Windows
+      // localhost → ::1 does not apply. Override with HOST=0.0.0.0 if needed.
+      host: process.env.HOST?.trim() || env.HOST?.trim() || '127.0.0.1',
       // Port precedence:
       //   1. --port CLI flag (wins, but we no longer hardcode it in package.json)
       //   2. $PORT env var (for containers, reverse proxies, WhatsApp bridge collisions, etc. — see #96)

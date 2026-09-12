@@ -243,16 +243,33 @@ void ensureDiscovery()
 // Config auto-writer
 // -------------------------------------------------------------------
 
-const CONFIG_PATH = path.join(
-  process.env.HERMES_HOME ?? process.env.CLAUDE_HOME ?? path.join(os.homedir(), '.hermes'),
-  'config.yaml',
-)
+const STORMBOT_PROFILE_NAME = 'framesengineering'
 
 const loggedWarnings = new Set<string>()
 
-function readYamlConfig(): Record<string, unknown> {
+function hermesHome(): string {
+  return (
+    process.env.HERMES_HOME ??
+    process.env.CLAUDE_HOME ??
+    path.join(os.homedir(), '.hermes')
+  )
+}
+
+function normalizeProviderUrl(url: string): string {
+  return url.trim().toLowerCase().replace(/\/+$/, '')
+}
+
+function providerConfigPaths(): string[] {
+  const home = hermesHome()
+  return [
+    path.join(home, 'config.yaml'),
+    path.join(home, 'profiles', STORMBOT_PROFILE_NAME, 'config.yaml'),
+  ]
+}
+
+function readYamlConfigFile(filePath: string): Record<string, unknown> {
   try {
-    const raw = fs.readFileSync(CONFIG_PATH, 'utf-8')
+    const raw = fs.readFileSync(filePath, 'utf-8')
     const parsed = YAML.parse(raw)
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return parsed as Record<string, unknown>
@@ -261,21 +278,47 @@ function readYamlConfig(): Record<string, unknown> {
   return {}
 }
 
+function customProviderEntryMatches(
+  entry: unknown,
+  providerId: string,
+  def?: LocalProviderDef,
+): boolean {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false
+  const rec = entry as Record<string, unknown>
+  const name = String(rec.name ?? '').trim().toLowerCase()
+  const title = String(rec.title ?? '').trim().toLowerCase()
+  const base = normalizeProviderUrl(
+    String(rec.base_url ?? rec.baseUrl ?? ''),
+  )
+  const aliases = [providerId, def?.id, def?.name]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.trim().toLowerCase())
+  if (name && aliases.includes(name)) return true
+  if (title && aliases.includes(title)) return true
+  if (def && base && base === normalizeProviderUrl(def.baseUrl)) return true
+  return false
+}
+
 /**
  * Check if a provider is already in custom_providers config.
- * Reads the active profile config using a YAML parser.
+ * Matches id/name/title case-insensitively, or the known local base URL,
+ * so a saved "Qwen Local" row on Ollama is not treated as missing.
  */
 export function isProviderConfigured(providerId: string): boolean {
   try {
-    const config = readYamlConfig()
-    const customProviders = config.custom_providers
-    if (!Array.isArray(customProviders)) return false
-    return customProviders.some(
-      (entry: unknown) =>
-        entry &&
-        typeof entry === 'object' &&
-        (entry as Record<string, unknown>).name === providerId,
-    )
+    const def = getLocalProviderDef(providerId)
+    for (const filePath of providerConfigPaths()) {
+      const customProviders = readYamlConfigFile(filePath).custom_providers
+      if (!Array.isArray(customProviders)) continue
+      if (
+        customProviders.some((entry) =>
+          customProviderEntryMatches(entry, providerId, def),
+        )
+      ) {
+        return true
+      }
+    }
+    return false
   } catch {
     return false
   }

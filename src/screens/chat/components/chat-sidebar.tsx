@@ -741,6 +741,7 @@ function ChatSidebarComponent({
   const isMemoryActive = pathname === '/memory'
   const isTasksActive = pathname === '/tasks'
   const isConductorActive = pathname === '/conductor'
+  const isWorkroomActive = pathname === '/workroom'
   const isOperationsActive = pathname === '/operations'
   const isSwarmActive = pathname === '/swarm' || pathname === '/swarm2'
   const echoStudioEnabled = useSettingsStore(
@@ -950,7 +951,7 @@ function ChatSidebarComponent({
       kind: 'link',
       to: '/operations',
       icon: UserMultipleIcon,
-      label: 'Assistants',
+      label: 'FRAMES Engineering',
       active: isOperationsActive,
     },
     {
@@ -981,6 +982,13 @@ function ChatSidebarComponent({
   ]
 
   const workspaceItems: Array<NavItemDef> = [
+    {
+      kind: 'link',
+      to: '/workroom',
+      icon: DashboardSquare01Icon,
+      label: 'Workroom',
+      active: isWorkroomActive,
+    },
     {
       kind: 'link',
       to: '/files',

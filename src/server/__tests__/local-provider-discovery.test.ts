@@ -48,6 +48,41 @@ describe('local-provider-discovery', () => {
     expect(mod.isProviderConfigured('atomic-chat')).toBe(false)
   })
 
+  it('treats a Qwen Local row on the Ollama URL as configured ollama', async () => {
+    const activeHome = '/mock/profiles/framesengineering'
+    process.env.CLAUDE_HOME = activeHome
+    const configPath = `${activeHome}/config.yaml`
+    existsSync.mockImplementation((p: string) => p === configPath)
+    readFileSync.mockImplementation((p: string) => {
+      if (p === configPath)
+        return 'custom_providers:\n  - name: Qwen Local\n    base_url: http://127.0.0.1:11434/v1\n    model: qwen3.5:9b-q4_K_M\n'
+      return ''
+    })
+
+    const mod = await loadMod()
+    expect(mod.isProviderConfigured('ollama')).toBe(true)
+    expect(mod.ensureProviderInConfig('ollama')).toBe(false)
+  })
+
+  it('reads framesengineering profile config without adding a second provider', async () => {
+    const root = '/mock/hermes'
+    process.env.HERMES_HOME = root
+    const defaultConfig = `${root}/config.yaml`
+    const framesConfig = `${root}/profiles/framesengineering/config.yaml`
+    existsSync.mockImplementation(
+      (p: string) => p === defaultConfig || p === framesConfig,
+    )
+    readFileSync.mockImplementation((p: string) => {
+      if (p === defaultConfig) return 'model: anthropic/claude-opus-4.6\n'
+      if (p === framesConfig)
+        return 'custom_providers:\n  - name: Qwen Local\n    base_url: http://127.0.0.1:11434/v1/\n'
+      return ''
+    })
+
+    const mod = await loadMod()
+    expect(mod.isProviderConfigured('ollama')).toBe(true)
+  })
+
   it('isProviderConfigured returns false when custom_providers is missing', async () => {
     const activeHome = '/mock/profiles/default'
     process.env.CLAUDE_HOME = activeHome

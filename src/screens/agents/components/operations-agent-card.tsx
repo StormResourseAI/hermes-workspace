@@ -18,6 +18,7 @@ import { runCronJob, toggleCronJob } from '@/lib/cron-api'
 import { cn } from '@/lib/utils'
 import { useAgentChat, type OperationsChatMessage } from '../hooks/use-agent-chat'
 import type { OperationsAgent } from '../hooks/use-operations'
+import { shouldDisableOperationsRun } from '@/lib/operations-run-button'
 
 function getStatusStyles(status: OperationsAgent['status']) {
   if (status === 'error') {
@@ -89,9 +90,13 @@ export function OperationsInlineChat({
 
   async function handleSend() {
     const message = draft.trim()
-    if (!message || isSending) return
-    await sendMessage(message)
-    setDraft('')
+    if (shouldDisableOperationsRun({ draft, isSending })) return
+    try {
+      await sendMessage(message)
+      setDraft('')
+    } catch {
+      // Visible via the error line below; never swallow a failed Run click.
+    }
   }
 
   return (
@@ -155,7 +160,7 @@ export function OperationsInlineChat({
             size="icon-sm"
             className="rounded-lg bg-[var(--theme-accent)] text-primary-950 hover:bg-[var(--theme-accent-strong)]"
             onClick={() => void handleSend()}
-            disabled={!draft.trim() || isSending}
+            disabled={shouldDisableOperationsRun({ draft, isSending })}
             aria-label={isSending ? 'Sending message' : 'Send message'}
           >
             <HugeiconsIcon icon={ArrowRight01Icon} size={15} strokeWidth={1.8} />
@@ -178,7 +183,10 @@ export function OperationsAgentCard({
   const displayName = stripEmojiPrefix(agent.name)
   const [showCronPanel, setShowCronPanel] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
-  const { messages, sendMessage, isSending, error } = useAgentChat(agent.sessionKey)
+  const { messages, sendMessage, isSending, error } = useAgentChat(
+    agent.sessionKey,
+    { model: agent.model, profile: agent.id },
+  )
   const cronJobCount = agent.jobs.length
   const isActive = agent.status === 'active' && !isPaused
 
@@ -219,7 +227,11 @@ export function OperationsAgentCard({
     }
 
     setIsPaused(false)
-    await sendMessage('Run your primary task now')
+    try {
+      await sendMessage('Run your primary task now')
+    } catch {
+      // Visible via the inline chat error line.
+    }
   }
 
   return (

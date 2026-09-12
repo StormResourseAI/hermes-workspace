@@ -73,6 +73,35 @@ describe('openaiChat', () => {
     expect(headers['X-Hermes-Session-Id']).toBe('workspace-session-2')
     expect(headers['X-Claude-Session-Id']).toBe('workspace-session-2')
   })
+
+  it('disables Qwen thinking and omits Codex bearer for local Ollama', async () => {
+    process.env.HERMES_API_TOKEN = 'codex-should-not-be-sent'
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: 'ok' } }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await openaiChat([{ role: 'user', content: 'hello' }], {
+      model: 'qwen3.5:9b-q4_K_M',
+      baseUrl: 'http://127.0.0.1:11434/v1',
+      think: false,
+    })
+
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body || '{}')) as {
+      think?: boolean
+      model?: string
+    }
+    expect(headers.Authorization).toBeUndefined()
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'http://127.0.0.1:11434/v1/chat/completions',
+    )
+    expect(body.model).toBe('qwen3.5:9b-q4_K_M')
+    expect(body.think).toBe(false)
+  })
 })
 
 describe('parseOpenAIStream', () => {
