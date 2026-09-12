@@ -171,7 +171,7 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
     if (pathname.startsWith('/jobs')) return 'Jobs'
     if (pathname.startsWith('/conductor')) return 'Conductor'
     if (pathname.startsWith('/workroom')) return 'Workroom'
-    if (pathname.startsWith('/operations')) return 'Assistants'
+    if (pathname.startsWith('/operations')) return 'FRAMES Engineering'
     if (pathname.startsWith('/swarm2') || pathname === '/swarm') return 'Teams'
     if (pathname.startsWith('/echo-studio')) return 'Echo Studio'
     if (pathname.startsWith('/memory')) return 'Memory'

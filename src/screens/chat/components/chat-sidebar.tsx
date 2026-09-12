@@ -951,7 +951,7 @@ function ChatSidebarComponent({
       kind: 'link',
       to: '/operations',
       icon: UserMultipleIcon,
-      label: 'Assistants',
+      label: 'FRAMES Engineering',
       active: isOperationsActive,
     },
     {
