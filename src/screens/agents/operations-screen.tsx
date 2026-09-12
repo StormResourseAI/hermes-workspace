@@ -94,10 +94,11 @@ export function OperationsScreen() {
             </div>
             <div>
               <h1 className="text-base font-semibold text-primary-900">
-                Assistants
+                FRAMES Engineering
               </h1>
               <p className="mt-1 text-sm text-primary-600">
-                Configure persistent agents and their defaults
+                Existing FRAMES runtime · actions remain governed through Hermes
+                sessions and approvals
               </p>
             </div>
           </div>

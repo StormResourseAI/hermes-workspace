@@ -47,7 +47,7 @@ export const MOBILE_NAV_TABS: Array<TabItem> = [
   },
   {
     id: 'operations',
-    label: 'Assistants',
+    label: 'FRAMES Engineering',
     icon: UserMultipleIcon,
     to: '/operations',
     match: (p) => p.startsWith('/operations'),

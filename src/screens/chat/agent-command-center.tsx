@@ -664,7 +664,7 @@ export function AgentCommandCenter({
             {[
               {
                 to: '/operations',
-                label: 'Assistants',
+                label: 'FRAMES Engineering',
                 icon: UserMultipleIcon,
               },
               { to: '/tasks', label: 'Tasks', icon: CheckListIcon },
