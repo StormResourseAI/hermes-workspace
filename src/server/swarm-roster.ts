@@ -41,8 +41,15 @@ export const SwarmRosterWorkerSchema = z.object({
   reviewRequired: z.boolean().default(false),
 })
 
+export const OperationsProfileMappingSchema = z.object({
+  id: WorkerIdSchema,
+  displayName: z.string().trim().min(1),
+  internalWorkers: z.array(WorkerIdSchema).min(1),
+})
+
 export const SwarmRosterSchema = z.object({
   version: z.number().int().positive().default(1),
+  operationsProfiles: z.array(OperationsProfileMappingSchema).default([]),
   workers: z.array(SwarmRosterWorkerSchema).default([]),
 })
 
@@ -95,6 +102,7 @@ function defaultRoleFromId(id: string): string {
 export function fallbackRoster(ids: Array<string> = []): SwarmRoster {
   return {
     version: 1,
+    operationsProfiles: [],
     workers: ids.map((id) => ({
       id,
       name: id.replace(/^swarm/i, 'Swarm'),
@@ -122,7 +130,11 @@ export function readSwarmRoster(ids: Array<string> = []): SwarmRoster {
     for (const fallback of fallbackRoster(ids).workers) {
       if (!byId.has(fallback.id)) byId.set(fallback.id, fallback)
     }
-    return { version: parsed.version, workers: [...byId.values()] }
+    return {
+      version: parsed.version,
+      operationsProfiles: parsed.operationsProfiles,
+      workers: [...byId.values()],
+    }
   } catch {
     return fallbackRoster(ids)
   }
@@ -141,6 +153,7 @@ export function upsertSwarmRosterWorker(input: SwarmRosterUpsert, ids: Array<str
   byId.set(nextWorker.id, nextWorker)
   const next: SwarmRoster = {
     version: current.version || 1,
+    operationsProfiles: current.operationsProfiles,
     workers: [...byId.values()].sort((a, b) => {
       const na = parseInt(a.id.replace(/\D/g, ''), 10) || 0
       const nb = parseInt(b.id.replace(/\D/g, ''), 10) || 0

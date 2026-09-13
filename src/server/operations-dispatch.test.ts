@@ -35,10 +35,18 @@ describe('operations-dispatch', () => {
     writeFileSync(
       path.join(profile, 'config.yaml'),
       [
-        'model: qwen3.5:9b-q4_K_M',
+        'model:',
+        '  default: qwen3.5:9b-q4_K_M',
+        '  provider: Qwen Local',
+        '  api_mode: chat_completions',
         'terminal:',
         '  backend: local',
         '  cwd: /Users/brianackley/stormbot-os',
+        'custom_providers:',
+        '  - name: Qwen Local',
+        '    base_url: http://127.0.0.1:11434/v1',
+        '    model: qwen3.5:9b-q4_K_M',
+        '    api_mode: chat_completions',
         '',
       ].join('\n'),
       'utf-8',
@@ -49,6 +57,7 @@ describe('operations-dispatch', () => {
     const dispatch = resolveOperationsDispatch('agent:main:ops-framesengineering')
     expect(dispatch).toMatchObject({
       agentId: 'framesengineering',
+      displayName: 'FRAMES Engineering',
       profileName: 'framesengineering',
       model: 'qwen3.5:9b-q4_K_M',
       provider: 'Qwen Local',
@@ -65,13 +74,20 @@ describe('operations-dispatch', () => {
         sha: '6f9b44d',
       },
     )
-    expect(scoped).toContain('name="framesengineering"')
+    expect(scoped).toContain('id="framesengineering"')
+    expect(scoped).toContain('name="FRAMES Engineering"')
     expect(scoped).toContain('/Users/brianackley/stormbot-os')
     expect(scoped).toContain('qwen3.5:9b-q4_K_M')
     expect(scoped).toContain('provider="Qwen Local"')
     expect(scoped).toContain('You must use a real Hermes tool')
     expect(scoped).not.toContain('report those three lines exactly')
     expect(scoped).not.toContain('codex')
+  })
+
+  it('fails closed for unknown or missing Operations profiles', async () => {
+    const { resolveOperationsDispatch } = await import('./operations-dispatch')
+    expect(resolveOperationsDispatch('agent:main:ops-unknown')).toBeNull()
+    expect(resolveOperationsDispatch('agent:main:ops-revenue-operator')).toBeNull()
   })
 
   it('recognizes the Operations terminal identity smoke prompt', async () => {

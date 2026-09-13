@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query'
 import {
   ArrowDown01Icon,
   Cancel01Icon,
-  Delete02Icon,
   Settings01Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -157,9 +156,7 @@ export function OperationsAgentDetail({
   agent,
   onClose,
   onSave,
-  onDelete,
   isSaving,
-  isDeleting,
 }: {
   open: boolean
   agent: OperationsAgent | null
@@ -171,9 +168,7 @@ export function OperationsAgentDetail({
     emoji: string
     systemPrompt: string
   }) => Promise<unknown>
-  onDelete: (agentId: string) => Promise<unknown>
   isSaving: boolean
-  isDeleting: boolean
 }) {
   const [name, setName] = useState('')
   const [emoji, setEmoji] = useState('🤖')
@@ -245,7 +240,7 @@ export function OperationsAgentDetail({
             <span className="text-sm font-medium text-[var(--theme-text)]">Name</span>
             <input
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              readOnly
               className="w-full rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-4 py-3 text-sm text-[var(--theme-text)] outline-none focus:border-[var(--theme-accent)]"
             />
           </label>
@@ -276,22 +271,13 @@ export function OperationsAgentDetail({
           />
         </label>
 
-        <div className="mt-6 flex flex-col gap-3 border-t border-[var(--theme-border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <Button
-            variant="ghost"
-            className="justify-start text-red-600 hover:bg-red-50 hover:text-red-700"
-            onClick={() => void onDelete(agent.id)}
-            disabled={isDeleting || isSaving}
-          >
-            <HugeiconsIcon icon={Delete02Icon} size={16} strokeWidth={1.8} />
-            {isDeleting ? 'Deleting…' : 'Delete agent'}
-          </Button>
+        <div className="mt-6 flex flex-col gap-3 border-t border-[var(--theme-border)] pt-4 sm:flex-row sm:items-center sm:justify-end">
           <div className="flex justify-end gap-3">
             <Button
               variant="secondary"
               className="border border-[var(--theme-border)] bg-[var(--theme-bg)] text-[var(--theme-text)] hover:bg-[var(--theme-card2)]"
               onClick={onClose}
-              disabled={isDeleting}
+              disabled={isSaving}
             >
               Cancel
             </Button>
@@ -306,7 +292,7 @@ export function OperationsAgentDetail({
                   systemPrompt,
                 })
               }
-              disabled={isSaving || isDeleting}
+              disabled={isSaving}
             >
               {isSaving ? 'Saving…' : 'Save'}
             </Button>

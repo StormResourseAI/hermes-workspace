@@ -10,6 +10,7 @@ import {
   getOperationsSessionKey,
   OPERATIONS_ACTIVE_RUNS_QUERY_KEY,
 } from '@/lib/operations-session'
+import { OPERATIONS_PROFILE_DEFINITIONS } from '@/lib/operations-profiles'
 
 // Claude-Workspace adapter: Operations is backed by Hermes profiles
 // (each profile = one persistent agent). Profiles live at ~/.hermes/profiles/<name>/
@@ -250,17 +251,22 @@ async function fetchClaudeProfiles(): Promise<ClaudeProfileSummary[]> {
 // Operations UI expects. Each profile becomes one agent.
 async function fetchOperationsConfig(): Promise<ConfigPayload> {
   const profiles = await fetchClaudeProfiles()
-  const list = profiles.map((profile) => ({
-    id: profile.name,
-    name: profile.name === 'default' ? 'Workspace' : profile.name,
-    model: profile.model || '',
-    workspace: profile.path,
-    agentDir: profile.path,
-    description: profile.description || '',
-    systemPrompt: profile.systemPrompt || '',
-  }))
-  // Default-profile model becomes the operations defaultModel suggestion
-  const defaultModel = profiles.find((p) => p.name === 'default')?.model || ''
+  const profilesByName = new Map(profiles.map((profile) => [profile.name, profile]))
+  const list = OPERATIONS_PROFILE_DEFINITIONS.flatMap((definition) => {
+    const profile = profilesByName.get(definition.id)
+    if (!profile) return []
+
+    return [{
+      id: definition.id,
+      name: definition.displayName,
+      model: profile.model || '',
+      workspace: profile.path,
+      agentDir: profile.path,
+      description: profile.description || '',
+      systemPrompt: profile.systemPrompt || '',
+    }]
+  })
+  const defaultModel = list.find((profile) => profile.model)?.model || ''
   return {
     ok: true,
     parsed: {

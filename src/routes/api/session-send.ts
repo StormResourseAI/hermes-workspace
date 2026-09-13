@@ -11,6 +11,7 @@ import { json } from '@tanstack/react-start'
 import { isAuthenticated } from '../../server/auth-middleware'
 import { requireJsonContentType } from '../../server/rate-limit'
 import { resolveOperationsDispatch } from '../../server/operations-dispatch'
+import { isOperationsSessionKey } from '../../lib/operations-session'
 import {
   parseSendStreamSseBuffer,
   resolveSessionSendResult,
@@ -35,15 +36,21 @@ export const Route = createFileRoute('/api/session-send')({
           }
           const sessionKey = (body.sessionKey || '').trim()
           const message = (body.message || '').trim()
-          const dispatch = resolveOperationsDispatch(sessionKey)
-          const model = (body.model || dispatch?.model || '').trim()
-          const profile = (body.profile || dispatch?.profileName || '').trim()
           if (!sessionKey) {
             return json(
               { ok: false, error: 'sessionKey is required' },
               { status: 400 },
             )
           }
+          const dispatch = resolveOperationsDispatch(sessionKey)
+          if (isOperationsSessionKey(sessionKey) && !dispatch) {
+            return json(
+              { ok: false, error: 'Operations profile is missing or invalid' },
+              { status: 400 },
+            )
+          }
+          const model = (dispatch?.model || body.model || '').trim()
+          const profile = (dispatch?.profileName || body.profile || '').trim()
           if (!message) {
             return json(
               { ok: false, error: 'message is required' },

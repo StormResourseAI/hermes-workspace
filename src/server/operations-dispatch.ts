@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import path from 'node:path'
 import YAML from 'yaml'
 import { parseOperationsAgentId } from '../lib/operations-session'
+import { getOperationsProfileDefinition } from '../lib/operations-profiles'
 
 export {
   getOperationsSessionKey,
@@ -12,14 +13,10 @@ export {
   getOperationsFriendlySessionKey,
 } from '../lib/operations-session'
 
-export const STORMBOT_PROFILE_NAME = 'framesengineering'
-export const QWEN_LOCAL_MODEL = 'qwen3.5:9b-q4_K_M'
-export const QWEN_LOCAL_PROVIDER = 'Qwen Local'
-export const QWEN_LOCAL_BASE_URL = 'http://127.0.0.1:11434/v1'
-
 export type OperationsDispatch = {
   sessionKey: string
   agentId: string
+  displayName: string
   profileName: string
   model: string
   provider: string
@@ -74,6 +71,28 @@ function readConfiguredProvider(cfg: Record<string, unknown>): string {
   return ''
 }
 
+function readConfiguredBaseUrl(
+  cfg: Record<string, unknown>,
+  provider: string,
+): string {
+  const model = cfg.model
+  if (model && typeof model === 'object' && !Array.isArray(model)) {
+    const direct = readString((model as Record<string, unknown>).base_url)
+    if (direct) return direct
+  }
+
+  const customProviders = cfg.custom_providers
+  if (!Array.isArray(customProviders)) return ''
+  for (const entry of customProviders) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const candidate = entry as Record<string, unknown>
+    if (readString(candidate.name) === provider) {
+      return readString(candidate.base_url)
+    }
+  }
+  return ''
+}
+
 function profileHome(profileName: string): string {
   if (profileName === 'default') return hermesRoot()
   return path.join(hermesRoot(), 'profiles', profileName)
@@ -84,32 +103,32 @@ export function resolveOperationsDispatch(
 ): OperationsDispatch | null {
   const agentId = parseOperationsAgentId(sessionKey)
   if (!agentId) return null
+  const definition = getOperationsProfileDefinition(agentId)
+  if (!definition) return null
 
-  const profileName =
-    existsSync(profileHome(agentId)) || agentId === 'default'
-      ? agentId
-      : existsSync(profileHome(STORMBOT_PROFILE_NAME))
-        ? STORMBOT_PROFILE_NAME
-        : agentId
-
-  const cfg = readYaml(path.join(profileHome(profileName), 'config.yaml'))
+  const profileName = definition.id
+  const configPath = path.join(profileHome(profileName), 'config.yaml')
+  if (!existsSync(configPath)) return null
+  const cfg = readYaml(configPath)
   const terminal =
     cfg.terminal && typeof cfg.terminal === 'object' && !Array.isArray(cfg.terminal)
       ? (cfg.terminal as Record<string, unknown>)
       : {}
-  const cwd =
-    readString(terminal.cwd) ||
-    '/Users/brianackley/stormbot-os'
-  const model = readConfiguredModel(cfg) || QWEN_LOCAL_MODEL
+  const cwd = readString(terminal.cwd)
+  const model = readConfiguredModel(cfg)
+  const provider = readConfiguredProvider(cfg)
+  const providerBaseUrl = readConfiguredBaseUrl(cfg, provider)
+  if (!cwd || !model || !provider || !providerBaseUrl) return null
 
   return {
     sessionKey,
     agentId,
+    displayName: definition.displayName,
     profileName,
     model,
-    provider: readConfiguredProvider(cfg) || QWEN_LOCAL_PROVIDER,
+    provider,
     cwd,
-    providerBaseUrl: QWEN_LOCAL_BASE_URL,
+    providerBaseUrl,
   }
 }
 
@@ -154,9 +173,9 @@ export function buildOperationsScopedMessage(
   identity: TerminalIdentity,
 ): string {
   const lines = [
-    `<workspace_context active="true" name="${dispatch.profileName}" path="${dispatch.cwd}" />`,
-    `<operations_profile name="${dispatch.profileName}" model="${dispatch.model}" provider="${dispatch.provider}" />`,
-    `You are the ${dispatch.profileName} assistant.`,
+    `<workspace_context active="true" name="${dispatch.displayName}" path="${dispatch.cwd}" />`,
+    `<operations_profile id="${dispatch.profileName}" name="${dispatch.displayName}" model="${dispatch.model}" provider="${dispatch.provider}" />`,
+    `You are the ${dispatch.displayName} assistant.`,
     'Use the local terminal in the workspace path below. Do not use Codex or cloud providers.',
     `Terminal cwd: ${dispatch.cwd}`,
   ]

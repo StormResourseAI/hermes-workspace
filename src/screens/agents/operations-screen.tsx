@@ -1,15 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { motion } from 'motion/react'
 import {
   AiBrain03Icon,
-  PlusSignIcon,
   Settings01Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { seedAgentPresets } from './agent-presets'
 import { OperationsAgentCard } from './components/operations-agent-card'
 import { OperationsAgentDetail } from './components/operations-agent-detail'
-import { OperationsNewAgentModal } from './components/operations-new-agent-modal'
 import { OperationsSettingsModal } from './components/operations-settings-modal'
 import { useOperations } from './hooks/use-operations'
 import type { CSSProperties } from 'react'
@@ -49,10 +46,6 @@ export const THEME_STYLE: CSSProperties = {
 }
 
 export function OperationsScreen() {
-  useEffect(() => {
-    seedAgentPresets()
-  }, [])
-  const [newAgentOpen, setNewAgentOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsAgentId, setSettingsAgentId] = useState<string | null>(null)
   const {
@@ -62,13 +55,8 @@ export function OperationsScreen() {
     cronJobsQuery,
     settings,
     saveSettings,
-    defaultModel,
-    createAgent,
-    isCreatingAgent,
     saveAgent,
     isSavingAgent,
-    deleteAgent,
-    isDeletingAgent,
   } = useOperations()
 
   const isLoading =
@@ -94,22 +82,15 @@ export function OperationsScreen() {
             </div>
             <div>
               <h1 className="text-base font-semibold text-primary-900">
-                FRAMES Engineering
+                Hermes Operations
               </h1>
               <p className="mt-1 text-sm text-primary-600">
-                Existing FRAMES runtime · actions remain governed through Hermes
+                Four scoped assistants · actions remain governed through Hermes
                 sessions and approvals
               </p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Button
-              className="bg-[var(--theme-accent)] text-primary-950 hover:bg-[var(--theme-accent-strong)]"
-              onClick={() => setNewAgentOpen(true)}
-            >
-              <HugeiconsIcon icon={PlusSignIcon} size={16} strokeWidth={1.8} />
-              New Assistant
-            </Button>
             <Button
               variant="secondary"
               className="border border-[var(--theme-border)] bg-[var(--theme-card)] text-[var(--theme-text)] hover:bg-[var(--theme-card2)]"
@@ -145,7 +126,7 @@ export function OperationsScreen() {
                 active
               </span>
             </div>
-            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {agents.map((agent, index) => (
                 <motion.div
                   key={agent.id}
@@ -159,36 +140,10 @@ export function OperationsScreen() {
                   />
                 </motion.div>
               ))}
-              <motion.button
-                type="button"
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: agents.length * 0.04, duration: 0.22 }}
-                onClick={() => setNewAgentOpen(true)}
-                className="flex min-h-[19rem] flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-[var(--theme-border)] bg-[var(--theme-card)] p-4 text-center shadow-[0_20px_60px_color-mix(in_srgb,var(--theme-shadow)_10%,transparent)] transition-colors hover:border-[var(--theme-accent)] hover:bg-[var(--theme-accent-soft)]"
-              >
-                <HugeiconsIcon
-                  icon={PlusSignIcon}
-                  size={32}
-                  strokeWidth={1.7}
-                  className="text-[var(--theme-muted)]"
-                />
-                <span className="mt-3 text-sm text-[var(--theme-muted)]">
-                  Add Assistant
-                </span>
-              </motion.button>
             </section>
           </>
         )}
       </section>
-
-      <OperationsNewAgentModal
-        open={newAgentOpen}
-        defaultModel={defaultModel}
-        onClose={() => setNewAgentOpen(false)}
-        onCreate={createAgent}
-        isSaving={isCreatingAgent}
-      />
 
       <OperationsSettingsModal
         open={settingsOpen}
@@ -202,14 +157,7 @@ export function OperationsScreen() {
         agent={settingsAgent}
         onClose={() => setSettingsAgentId(null)}
         onSave={saveAgent}
-        onDelete={async (agentId) => {
-          await deleteAgent(agentId)
-          setSettingsAgentId((current) =>
-            current === agentId ? null : current,
-          )
-        }}
         isSaving={isSavingAgent}
-        isDeleting={isDeletingAgent}
       />
     </main>
   )

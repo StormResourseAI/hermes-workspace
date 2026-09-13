@@ -28,6 +28,13 @@ describe('swarm roster semantic workers', () => {
   it('preserves semantic roster metadata through parse', () => {
     const parsed = SwarmRosterSchema.parse({
       version: 1,
+      operationsProfiles: [
+        {
+          id: 'framesengineering',
+          displayName: 'FRAMES Engineering',
+          internalWorkers: ['builder', 'reviewer', 'qa'],
+        },
+      ],
       workers: [
         {
           id: 'km-agent',
@@ -64,5 +71,12 @@ describe('swarm roster semantic workers', () => {
       wrapper: 'km:health',
       greenlightRequiredFor: ['delete', 'purge', 'publish'],
     })
+    expect(parsed.operationsProfiles).toEqual([
+      {
+        id: 'framesengineering',
+        displayName: 'FRAMES Engineering',
+        internalWorkers: ['builder', 'reviewer', 'qa'],
+      },
+    ])
   })
 })

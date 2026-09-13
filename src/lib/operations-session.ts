@@ -2,6 +2,12 @@ export const OPERATIONS_SESSION_PREFIX = 'agent:main:ops-'
 export const OPERATIONS_ACTIVE_RUNS_QUERY_KEY = ['operations', 'active-runs'] as const
 // Operations cards must not stay "active" after a finished local turn.
 
+export function isOperationsSessionKey(
+  sessionKey: string | null | undefined,
+): boolean {
+  return (sessionKey ?? '').trim().startsWith(OPERATIONS_SESSION_PREFIX)
+}
+
 export function getOperationsSessionKey(agentId: string): string {
   return `${OPERATIONS_SESSION_PREFIX}${agentId}`
 }

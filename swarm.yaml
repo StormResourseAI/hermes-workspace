@@ -1,4 +1,25 @@
 version: 1
+operationsProfiles:
+  - id: revenue-operator
+    displayName: Revenue Operator
+    internalWorkers:
+      - strategist
+      - ops-watch
+  - id: framesengineering
+    displayName: FRAMES Engineering
+    internalWorkers:
+      - builder
+      - reviewer
+      - qa
+  - id: research-intelligence
+    displayName: Research Intelligence
+    internalWorkers:
+      - researcher
+  - id: client-ops
+    displayName: Client Ops
+    internalWorkers:
+      - inbox-triage
+      - km-agent
 workers:
 - id: orchestrator
   name: Orchestrator

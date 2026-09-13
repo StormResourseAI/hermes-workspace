@@ -42,6 +42,7 @@ import {
   readTerminalIdentity,
   resolveOperationsDispatch,
 } from '../../server/operations-dispatch'
+import { isOperationsSessionKey } from '../../lib/operations-session'
 import { loadAssistantWorkspaceScope } from './workspace'
 import {
   collectSyntheticLiveToolEvents,
@@ -364,9 +365,18 @@ export const Route = createFileRoute('/api/send-stream')({
         let chatMode = getChatMode()
         let localBaseUrl: string | undefined
         const operationsDispatch = resolveOperationsDispatch(sessionKey)
+        if (isOperationsSessionKey(sessionKey) && !operationsDispatch) {
+          return new Response(
+            JSON.stringify({ ok: false, error: 'Operations profile is missing or invalid' }),
+            {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          )
+        }
         const requestModel =
-          (typeof body.model === 'string' && body.model.trim()) ||
           operationsDispatch?.model ||
+          (typeof body.model === 'string' && body.model.trim()) ||
           ''
         const bareModel = requestModel.includes('/') ? requestModel.split('/').slice(1).join('/') : requestModel
         // Operations must stay on the Hermes gateway tool loop.
